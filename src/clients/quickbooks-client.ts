@@ -15,7 +15,7 @@ const client_secret = process.env.QUICKBOOKS_CLIENT_SECRET;
 const refresh_token = process.env.QUICKBOOKS_REFRESH_TOKEN;
 const realm_id = process.env.QUICKBOOKS_REALM_ID;
 const environment = process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox';
-const redirect_uri = 'http://localhost:8000/callback';
+const redirect_uri = process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:8000/callback';
 
 // Only throw error if client_id or client_secret is missing
 if (!client_id || !client_secret || !redirect_uri) {
@@ -34,6 +34,11 @@ class QuickbooksClient {
   private oauthClient: OAuthClient;
   private isAuthenticating: boolean = false;
   private redirectUri: string;
+
+  // External auth support (from Copilot Studio)
+  private externalAccessToken?: string;
+  private externalRealmId?: string;
+  private useExternalAuth: boolean = false;
 
   constructor(config: {
     clientId: string;
@@ -55,6 +60,29 @@ class QuickbooksClient {
       environment: this.environment,
       redirectUri: this.redirectUri,
     });
+  }
+
+  /**
+   * Set external OAuth access token (from Copilot Studio)
+   * This enables multi-user scenarios where each user has their own token.
+   *
+   * @param accessToken - OAuth 2.0 access token from Copilot Studio
+   * @param realmId - QuickBooks company ID (realm ID)
+   */
+  setExternalAuth(accessToken: string, realmId: string): void {
+    this.externalAccessToken = accessToken;
+    this.externalRealmId = realmId;
+    this.useExternalAuth = true;
+    console.log(`External auth configured for realm: ${realmId}`);
+  }
+
+  /**
+   * Clear external auth and fall back to internal .env tokens
+   */
+  clearExternalAuth(): void {
+    this.externalAccessToken = undefined;
+    this.externalRealmId = undefined;
+    this.useExternalAuth = false;
   }
 
   private async startOAuthFlow(): Promise<void> {
@@ -202,9 +230,36 @@ class QuickbooksClient {
   }
 
   async authenticate() {
+    // Priority 1: Use external auth if provided (Copilot Studio)
+    if (this.useExternalAuth && this.externalAccessToken && this.externalRealmId) {
+      console.log('Using external OAuth token from Copilot Studio');
+
+      this.quickbooksInstance = new QuickBooks(
+        this.clientId,
+        this.clientSecret,
+        this.externalAccessToken,
+        false, // no token secret for OAuth 2.0
+        this.externalRealmId,
+        this.environment === 'sandbox',
+        false, // debug?
+        null, // minor version
+        '2.0', // oauth version
+        undefined // no refresh token needed with external auth
+      );
+
+      return this.quickbooksInstance;
+    }
+
+    // Priority 1.5: External auth with access token but missing realm ID
+    // Don't start OAuth flow automatically - let HTTP server handle it
+    if (this.useExternalAuth && this.externalAccessToken && !this.externalRealmId) {
+      throw new Error('REALM_ID_REQUIRED');
+    }
+
+    // Priority 2: Use internal .env tokens (backward compatibility)
     if (!this.refreshToken || !this.realmId) {
       await this.startOAuthFlow();
-      
+
       // Verify we have both tokens after OAuth flow
       if (!this.refreshToken || !this.realmId) {
         throw new Error('Failed to obtain required tokens from OAuth flow');
@@ -217,7 +272,7 @@ class QuickbooksClient {
       const tokenResponse = await this.refreshAccessToken();
       this.accessToken = tokenResponse.access_token;
     }
-    
+
     // At this point we know all tokens are available
     this.quickbooksInstance = new QuickBooks(
       this.clientId,
@@ -231,7 +286,7 @@ class QuickbooksClient {
       '2.0', // oauth version
       this.refreshToken
     );
-    
+
     return this.quickbooksInstance;
   }
   

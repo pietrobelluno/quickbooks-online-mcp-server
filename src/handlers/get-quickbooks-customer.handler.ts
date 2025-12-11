@@ -11,7 +11,9 @@ export async function getQuickbooksCustomer(id: string): Promise<ToolResponse<an
     const quickbooks = quickbooksClient.getQuickbooks();
 
     return new Promise((resolve) => {
-      (quickbooks as any).getCustomer(id, (err: any, customer: any) => {
+      // Use findCustomers with ID filter instead of getCustomer
+      // getCustomer doesn't exist in node-quickbooks for Customer entity
+      (quickbooks as any).findCustomers({ Id: id }, (err: any, customers: any) => {
         if (err) {
           resolve({
             result: null,
@@ -19,11 +21,20 @@ export async function getQuickbooksCustomer(id: string): Promise<ToolResponse<an
             error: formatError(err),
           });
         } else {
-          resolve({
-            result: customer,
-            isError: false,
-            error: null,
-          });
+          const customer = customers?.QueryResponse?.Customer?.[0];
+          if (!customer) {
+            resolve({
+              result: null,
+              isError: true,
+              error: `Customer with ID ${id} not found`,
+            });
+          } else {
+            resolve({
+              result: customer,
+              isError: false,
+              error: null,
+            });
+          }
         }
       });
     });

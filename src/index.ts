@@ -69,92 +69,86 @@ import { SearchPurchasesTool } from "./tools/search-purchases.tool.js";
 const main = async () => {
   // Create an MCP server
   const server = QuickbooksMCPServer.GetServer();
+
+  // ===== TESTING: Only 3 tools enabled to test response size issue =====
   // Add tools for customers
+  RegisterTool(server, SearchCustomersTool);
   RegisterTool(server, CreateCustomerTool);
   RegisterTool(server, GetCustomerTool);
-  RegisterTool(server, UpdateCustomerTool);
-  RegisterTool(server, DeleteCustomerTool);
-  RegisterTool(server, SearchCustomersTool);
-  // Add tools for estimates
-  RegisterTool(server, CreateEstimateTool);
-  RegisterTool(server, GetEstimateTool);
-  RegisterTool(server, UpdateEstimateTool);
-  RegisterTool(server, DeleteEstimateTool);
-  RegisterTool(server, SearchEstimatesTool);
-  
-  // Add tools for bills
-  RegisterTool(server, CreateBillTool);
-  RegisterTool(server, UpdateBillTool);
-  RegisterTool(server, DeleteBillTool);
-  RegisterTool(server, GetBillTool);
-  RegisterTool(server, SearchBillsTool);
 
-
-  // Add tool to read a single invoice
-  RegisterTool(server, ReadInvoiceTool);
-
-  // Add tool to search invoices
-  RegisterTool(server, SearchInvoicesTool);
-
-  // Add tool to create invoice
-  RegisterTool(server, CreateInvoiceTool);
-
-  // Add tool to update invoice
-  RegisterTool(server, UpdateInvoiceTool);
-
-  // Chart of accounts tools
-  RegisterTool(server, CreateAccountTool);
-  RegisterTool(server, UpdateAccountTool);
-  RegisterTool(server, SearchAccountsTool);
-
-  // Add tool to read item
-  RegisterTool(server, ReadItemTool);
-  RegisterTool(server, SearchItemsTool);
-  RegisterTool(server, CreateItemTool);
-  RegisterTool(server, UpdateItemTool);
-
-  // // Add a tool to create a customer
-  // RegisterTool(server, CreateCustomerTool);
-
-  // // Add tool to list accounts
-  // RegisterTool(server, ListAccountsTool);
-
-  // // Add tool to update a customer
+  // ===== ALL OTHER TOOLS COMMENTED OUT FOR TESTING =====
   // RegisterTool(server, UpdateCustomerTool);
+  // RegisterTool(server, DeleteCustomerTool);
+  // // Add tools for estimates
+  // RegisterTool(server, CreateEstimateTool);
+  // RegisterTool(server, GetEstimateTool);
+  // RegisterTool(server, UpdateEstimateTool);
+  // RegisterTool(server, DeleteEstimateTool);
+  // RegisterTool(server, SearchEstimatesTool);
 
-  // Add tools for vendors
-  RegisterTool(server, CreateVendorTool);
-  RegisterTool(server, UpdateVendorTool);
-  RegisterTool(server, DeleteVendorTool);
-  RegisterTool(server, GetVendorTool);
-  RegisterTool(server, SearchVendorsTool);
+  // // Add tools for bills
+  // RegisterTool(server, CreateBillTool);
+  // RegisterTool(server, UpdateBillTool);
+  // RegisterTool(server, DeleteBillTool);
+  // RegisterTool(server, GetBillTool);
+  // RegisterTool(server, SearchBillsTool);
 
-  // Add tools for employees
-  RegisterTool(server, CreateEmployeeTool);
-  RegisterTool(server, GetEmployeeTool);
-  RegisterTool(server, UpdateEmployeeTool);
-  RegisterTool(server, SearchEmployeesTool);
+  // // Add tool to read a single invoice
+  // RegisterTool(server, ReadInvoiceTool);
 
-  // Add tools for journal entries
-  RegisterTool(server, CreateJournalEntryTool);
-  RegisterTool(server, GetJournalEntryTool);
-  RegisterTool(server, UpdateJournalEntryTool);
-  RegisterTool(server, DeleteJournalEntryTool);
-  RegisterTool(server, SearchJournalEntriesTool);
+  // // Add tool to search invoices
+  // RegisterTool(server, SearchInvoicesTool);
 
-  // Add tools for bill payments
-  RegisterTool(server, CreateBillPaymentTool);
-  RegisterTool(server, GetBillPaymentTool);
-  RegisterTool(server, UpdateBillPaymentTool);
-  RegisterTool(server, DeleteBillPaymentTool);
-  RegisterTool(server, SearchBillPaymentsTool);
+  // // Add tool to create invoice
+  // RegisterTool(server, CreateInvoiceTool);
 
-  // Add tools for purchases
-  RegisterTool(server, CreatePurchaseTool);
-  RegisterTool(server, GetPurchaseTool);
-  RegisterTool(server, UpdatePurchaseTool);
-  RegisterTool(server, DeletePurchaseTool);
-  RegisterTool(server, SearchPurchasesTool);
+  // // Add tool to update invoice
+  // RegisterTool(server, UpdateInvoiceTool);
+
+  // // Chart of accounts tools
+  // RegisterTool(server, CreateAccountTool);
+  // RegisterTool(server, UpdateAccountTool);
+  // RegisterTool(server, SearchAccountsTool);
+
+  // // Add tool to read item
+  // RegisterTool(server, ReadItemTool);
+  // RegisterTool(server, SearchItemsTool);
+  // RegisterTool(server, CreateItemTool);
+  // RegisterTool(server, UpdateItemTool);
+
+  // // Add tools for vendors
+  // RegisterTool(server, CreateVendorTool);
+  // RegisterTool(server, UpdateVendorTool);
+  // RegisterTool(server, DeleteVendorTool);
+  // RegisterTool(server, GetVendorTool);
+  // RegisterTool(server, SearchVendorsTool);
+
+  // // Add tools for employees
+  // RegisterTool(server, CreateEmployeeTool);
+  // RegisterTool(server, GetEmployeeTool);
+  // RegisterTool(server, UpdateEmployeeTool);
+  // RegisterTool(server, SearchEmployeesTool);
+
+  // // Add tools for journal entries
+  // RegisterTool(server, CreateJournalEntryTool);
+  // RegisterTool(server, GetJournalEntryTool);
+  // RegisterTool(server, UpdateJournalEntryTool);
+  // RegisterTool(server, DeleteJournalEntryTool);
+  // RegisterTool(server, SearchJournalEntriesTool);
+
+  // // Add tools for bill payments
+  // RegisterTool(server, CreateBillPaymentTool);
+  // RegisterTool(server, GetBillPaymentTool);
+  // RegisterTool(server, UpdateBillPaymentTool);
+  // RegisterTool(server, DeleteBillPaymentTool);
+  // RegisterTool(server, SearchBillPaymentsTool);
+
+  // // Add tools for purchases
+  // RegisterTool(server, CreatePurchaseTool);
+  // RegisterTool(server, GetPurchaseTool);
+  // RegisterTool(server, UpdatePurchaseTool);
+  // RegisterTool(server, DeletePurchaseTool);
+  // RegisterTool(server, SearchPurchasesTool);
 
   // Start receiving messages on stdin and sending messages on stdout
   const transport = new StdioServerTransport();

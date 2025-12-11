@@ -3,7 +3,12 @@ import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
 
 const toolName = "search_estimates";
-const toolDescription = "Search estimates in QuickBooks Online that match given criteria.";
+const toolDescription = `Search estimates in QuickBooks Online that match given criteria.
+
+Returns up to 10 results by default (max 50 per request).
+Use 'limit' and 'offset' parameters to paginate through results.
+
+Example: { limit: 20, offset: 20 } for results 21-40`;
 
 // A subset of commonly‑used Estimate fields that can be filtered on.
 // This is *not* an exhaustive list, but provides helpful IntelliSense / docs
@@ -59,22 +64,25 @@ export const SearchEstimatesTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: async (args) => {
-    const { criteria = [], ...options } = (args.params ?? {}) as z.infer<typeof toolSchema>;
+    const { criteria = [], limit = 10, ...options } = (args.params ?? {}) as z.infer<typeof toolSchema>;
+
+    // Apply safety cap for Copilot Studio
+    const cappedLimit = Math.min(limit, 50); // Max 50 for Copilot Studio
 
     // build criteria to pass to SDK, supporting advanced operator syntax
     let criteriaToSend: any;
     if (Array.isArray(criteria) && criteria.length > 0) {
       const first = criteria[0] as any;
       if (typeof first === "object" && "field" in first) {
-        criteriaToSend = [...criteria, ...Object.entries(options).map(([key, value]) => ({ field: key, value }))];
+        criteriaToSend = [...criteria, ...Object.entries({ limit: cappedLimit, ...options }).map(([key, value]) => ({ field: key, value }))];
       } else {
         criteriaToSend = (criteria as Array<{ key: string; value: any }>).reduce<Record<string, any>>((acc, { key, value }) => {
           if (value !== undefined && value !== null) acc[key] = value;
           return acc;
-        }, { ...options });
+        }, { limit: cappedLimit, ...options });
       }
     } else {
-      criteriaToSend = { ...options };
+      criteriaToSend = { limit: cappedLimit, ...options };
     }
 
     const response = await searchQuickbooksEstimates(criteriaToSend);

@@ -54,7 +54,10 @@ const toolSchema = z.object({
 });
 
 const toolHandler = async (args: any) => {
-  const { criteria = [], ...options } = (args.params ?? {}) as z.infer<typeof toolSchema>;
+  const { criteria = [], limit = 10, ...options } = (args.params ?? {}) as z.infer<typeof toolSchema>;
+
+  // Apply safety cap for Copilot Studio
+  const cappedLimit = Math.min(limit, 50); // Max 50 for Copilot Studio
 
   // Build criteria to send to SDK. If user provided the advanced array with field/operator/value
   // we pass it straight through. Otherwise we transform legacy {key,value} pairs to object.
@@ -62,16 +65,16 @@ const toolHandler = async (args: any) => {
   if (Array.isArray(criteria) && criteria.length > 0) {
     const first = criteria[0] as any;
     if (typeof first === "object" && "field" in first) {
-      criteriaToSend = [...criteria, ...Object.entries(options).map(([key, value]) => ({ field: key, value }))];
+      criteriaToSend = [...criteria, ...Object.entries({ limit: cappedLimit, ...options }).map(([key, value]) => ({ field: key, value }))];
     } else {
       // original simple key/value list → map
       criteriaToSend = (criteria as Array<{ key: string; value: any }>).reduce<Record<string, any>>((acc, { key, value }) => {
         if (value !== undefined && value !== null) acc[key] = value;
         return acc;
-      }, { ...options });
+      }, { limit: cappedLimit, ...options });
     }
   } else {
-    criteriaToSend = { ...options };
+    criteriaToSend = { limit: cappedLimit, ...options };
   }
 
   const response = await searchQuickbooksCustomers(criteriaToSend);

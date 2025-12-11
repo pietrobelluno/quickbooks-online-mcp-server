@@ -1,0 +1,45 @@
+# Node modules
+node_modules
+npm-debug.log
+
+# Build output (will be built in Docker)
+dist
+
+# Development files
+.git
+.gitignore
+.env
+.env.local
+.env.*
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+coverage
+.nyc_output
+
+# Documentation
+README.md
+*.md
+
+# Data files (user realm mappings - will be persisted elsewhere in prod)
+data/
+
+# Logs
+*.log
+logs/
+/tmp
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose.yml

@@ -3,7 +3,12 @@ import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
 
 const toolName = "search_invoices";
-const toolDescription = "Search invoices in QuickBooks Online using criteria (maps to node-quickbooks findInvoices).";
+const toolDescription = `Search invoices in QuickBooks Online using criteria (maps to node-quickbooks findInvoices).
+
+Returns up to 10 results by default (max 50 per request).
+Use 'limit' and 'offset' parameters to paginate through results.
+
+Example: { filters: [...], limit: 20, offset: 20 } for results 21-40`;
 
 // ALLOWED FIELD LISTS (derived from Quickbooks Invoice entity docs – Filterable and Sortable columns)
 const ALLOWED_FILTER_FIELDS = [
@@ -66,7 +71,13 @@ const sortableFieldSchema = z
 
 // Criteria can be advanced
 const operatorSchema = z.enum(["=", "IN", "<", ">", "<=", ">=", "LIKE"]).optional();
-const filterSchema = z.object({
+
+const criterionSchema = z.object({
+  key: z.string().describe("Simple key (legacy) – any Invoice property name."),
+  value: z.union([z.string(), z.boolean()]),
+});
+
+const advancedCriterionSchema = z.object({
   field: filterableFieldSchema,
   value: z.any(),
   operator: operatorSchema,
@@ -79,40 +90,61 @@ const filterSchema = z.object({
   }
 });
 
-const advancedCriteriaSchema = z.object({
-  filters: z.array(filterSchema).optional(),
-  asc: sortableFieldSchema.optional(),
-  desc: sortableFieldSchema.optional(),
+const toolSchema = z.object({
+  criteria: z
+    .array(advancedCriterionSchema.or(criterionSchema))
+    .optional()
+    .describe(
+      "Filters to apply. Use the advanced form {field,value,operator?} for operators or the simple {key,value} pairs."
+    ),
   limit: z.number().optional(),
   offset: z.number().optional(),
+  asc: sortableFieldSchema.optional(),
+  desc: sortableFieldSchema.optional(),
   count: z.boolean().optional(),
   fetchAll: z.boolean().optional(),
 });
 
-// Runtime schema used internally for validation
-const RUNTIME_CRITERIA_SCHEMA = z.union([
-  z.record(z.any()),
-  z.array(z.record(z.any())),
-  advancedCriteriaSchema,
-]);
+const toolHandler = async (args: any) => {
+  const { criteria = [], limit = 10, offset = 0, count = false, ...options } =
+    (args.params ?? {}) as z.infer<typeof toolSchema>;
 
-// Exposed schema – use broad type to prevent deep $ref issues
-const toolSchema = z.object({ criteria: z.any() });
+  // Apply safety cap for Copilot Studio
+  const cappedLimit = Math.min(limit, 50);
 
-const toolHandler = async ({ params }: any) => {
-  const { criteria } = params;
-
-  // Validate runtime schema
-  const parsed = RUNTIME_CRITERIA_SCHEMA.safeParse(criteria);
-  if (!parsed.success) {
-    return {
-      content: [
-        { type: "text" as const, text: `Invalid criteria: ${parsed.error.message}` },
-      ],
-    };
+  // Build criteria to pass to SDK, supporting advanced operator syntax
+  let criteriaToSend: any;
+  if (Array.isArray(criteria) && criteria.length > 0) {
+    const first = criteria[0] as any;
+    if (typeof first === "object" && "field" in first) {
+      // Advanced format with field/value/operator
+      const filters: Record<string, any> = {};
+      criteria.forEach((c: any) => {
+        const key = c.field || c.key;
+        const val = c.value;
+        if (key && key !== 'count') {
+          filters[key] = val;
+        }
+      });
+      criteriaToSend = { ...filters, limit: cappedLimit, offset, ...options };
+    } else {
+      // Legacy format with key/value
+      criteriaToSend = (criteria as Array<{ key: string; value: any }>).reduce<Record<string, any>>(
+        (acc, { key, value }) => {
+          if (value !== undefined && value !== null && key !== 'count') {
+            acc[key] = value;
+          }
+          return acc;
+        },
+        { limit: cappedLimit, offset, ...options }
+      );
+    }
+  } else {
+    // No criteria - just pagination
+    criteriaToSend = { limit: cappedLimit, offset, ...options };
   }
 
-  const response = await searchQuickbooksInvoices(criteria);
+  const response = await searchQuickbooksInvoices(criteriaToSend);
 
   if (response.isError) {
     return {
