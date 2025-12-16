@@ -4,12 +4,7 @@ import { z } from "zod";
 
 // Define the tool metadata
 const toolName = "search_purchases";
-const toolDescription = `Search purchases in QuickBooks Online that match given criteria.
-
-Returns up to 10 results by default (max 50 per request).
-Use 'limit' and 'offset' parameters to paginate through results.
-
-Example: { limit: 20, offset: 20 } for results 21-40`;
+const toolDescription = "Search purchases in QuickBooks Online that match given criteria.";
 
 // Define the expected input schema for searching purchases
 const toolSchema = z.object({
@@ -26,12 +21,7 @@ type ToolParams = z.infer<typeof toolSchema>;
 
 // Define the tool handler
 const toolHandler = async (args: any) => {
-  // Apply default limit and safety cap for Copilot Studio
-  const { limit = 10, ...rest } = args.params || {};
-  const cappedLimit = Math.min(limit, 50); // Max 50 for Copilot Studio
-  const modifiedParams = { ...rest, limit: cappedLimit };
-
-  const response = await searchQuickbooksPurchases(modifiedParams);
+  const response = await searchQuickbooksPurchases(args.params);
 
   if (response.isError) {
     return {
@@ -54,4 +44,5 @@ export const SearchPurchasesTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
+  readOnlyHint: true,
 }; 

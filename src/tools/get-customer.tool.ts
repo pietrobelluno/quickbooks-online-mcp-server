@@ -33,4 +33,5 @@ export const GetCustomerTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
+  readOnlyHint: true,
 }; 

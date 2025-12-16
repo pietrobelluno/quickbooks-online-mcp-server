@@ -38,4 +38,5 @@ export const GetPurchaseTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
+  readOnlyHint: true,
 }; 

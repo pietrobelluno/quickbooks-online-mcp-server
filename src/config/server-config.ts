@@ -3,21 +3,36 @@
  *
  * Manages server settings for different deployment modes:
  * - Development: stdio transport with .env OAuth
- * - Production: HTTP transport with Copilot Studio OAuth
+ * - Production: HTTP transport with Claude Desktop OAuth
  */
 
 export interface ServerConfig {
   /** Server port for HTTP transport (default: 8080) */
   port: number;
 
-  /** Transport mode: 'http' for Copilot Studio, 'stdio' for Claude Desktop */
+  /** Transport mode: 'http' for Claude Desktop, 'stdio' for local dev */
   transport: 'http' | 'stdio';
 
-  /** Auth mode: 'external' for Copilot Studio OAuth, 'internal' for .env tokens */
-  authMode: 'external' | 'internal';
+  /** Auth mode: 'claude-desktop' for Claude OAuth, 'internal' for .env tokens */
+  authMode: 'claude-desktop' | 'internal';
 
-  /** Path to user-realm ID mapping storage */
-  realmIdStoragePath: string;
+  /** Claude Desktop OAuth client ID */
+  claudeClientId?: string;
+
+  /** Claude Desktop OAuth redirect URI */
+  claudeRedirectUri: string;
+
+  /** Path to MCP token storage */
+  mcpTokenStoragePath: string;
+
+  /** Path to QuickBooks session storage */
+  qbSessionStoragePath: string;
+
+  /** QuickBooks OAuth configuration */
+  quickbooksClientId: string;
+  quickbooksClientSecret: string;
+  quickbooksRedirectUri: string;
+  quickbooksEnvironment: string;
 }
 
 /**
@@ -27,8 +42,21 @@ export function loadConfig(): ServerConfig {
   return {
     port: parseInt(process.env.PORT || '8080', 10),
     transport: (process.env.TRANSPORT as 'http' | 'stdio') || 'http',
-    authMode: (process.env.AUTH_MODE as 'external' | 'internal') || 'external',
-    realmIdStoragePath: process.env.REALM_ID_STORAGE_PATH || './data/user-realms.json',
+    authMode: (process.env.AUTH_MODE as 'claude-desktop' | 'internal') || 'claude-desktop',
+
+    // Claude Desktop OAuth
+    claudeClientId: process.env.CLAUDE_CLIENT_ID,
+    claudeRedirectUri: process.env.CLAUDE_REDIRECT_URI || 'https://claude.ai/api/mcp/auth_callback',
+
+    // Storage paths
+    mcpTokenStoragePath: process.env.MCP_TOKEN_STORAGE_PATH || './data/mcp-tokens.json',
+    qbSessionStoragePath: process.env.QB_SESSION_STORAGE_PATH || './data/qb-sessions.json',
+
+    // QuickBooks OAuth (required)
+    quickbooksClientId: process.env.QUICKBOOKS_CLIENT_ID || '',
+    quickbooksClientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || '',
+    quickbooksRedirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:8080/oauth/callback',
+    quickbooksEnvironment: process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox',
   };
 }
 

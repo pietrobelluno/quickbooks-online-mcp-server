@@ -24,4 +24,5 @@ export const DeleteEstimateTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
+  destructiveHint: true,
 }; 

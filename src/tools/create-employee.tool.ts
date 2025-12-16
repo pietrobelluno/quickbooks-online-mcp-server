@@ -38,4 +38,5 @@ export const CreateEmployeeTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
+  destructiveHint: true,
 }; 

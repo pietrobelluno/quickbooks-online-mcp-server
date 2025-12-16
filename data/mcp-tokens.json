@@ -1,0 +1,17 @@
+{
+  "mcp_03de374373fb498ddca8a254b00e4990c6df9dd00f595b41930fe4816f494863": {
+    "sessionId": "8c1ba67d-44f8-469e-8cc1-b00daeda800c",
+    "issuedAt": 1765913966106,
+    "expiresAt": 1765917566106
+  },
+  "mcp_aa99a97bae65015f17656230195d09a10def7bfd7aa0853722cec1cc2d29f5ca": {
+    "sessionId": "a32ef128-cbea-46da-aab4-0967f37c7b5e",
+    "issuedAt": 1765914039484,
+    "expiresAt": 1765917639484
+  },
+  "mcp_6f44bc0a500725200d37b27df1377a9bb858d32b1eabbd3cdc72eb7e1676a902": {
+    "sessionId": "2457b671-f1e6-4329-98dd-3147a8a3528c",
+    "issuedAt": 1765914179538,
+    "expiresAt": 1765917779538
+  }
+}

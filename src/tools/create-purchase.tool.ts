@@ -38,4 +38,5 @@ export const CreatePurchaseTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
+  destructiveHint: true,
 }; 

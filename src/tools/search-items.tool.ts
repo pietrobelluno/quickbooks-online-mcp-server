@@ -3,12 +3,7 @@ import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
 
 const toolName = "search_items";
-const toolDescription = `Search items in QuickBooks Online using criteria (maps to node-quickbooks findItems).
-
-Returns up to 10 results by default (max 50 per request).
-Use 'limit' and 'offset' parameters to paginate through results.
-
-Example: { filters: [...], limit: 20, offset: 20 } for results 21-40`;
+const toolDescription = "Search items in QuickBooks Online using criteria (maps to node-quickbooks findItems).";
 
 // Allowed field lists derived from QuickBooks Online Item entity documentation (Filterable/Sortable columns)
 const ALLOWED_FILTER_FIELDS = [
@@ -61,6 +56,65 @@ const sortableFieldSchema = z
 
 // Advanced criteria validations
 const operatorSchema = z.enum(["=", "IN", "<", ">", "<=", ">=", "LIKE"]).optional();
+const filterSchema = z.object({
+  field: filterableFieldSchema,
+  value: z.any(),
+  operator: operatorSchema,
+}).superRefine((obj, ctx) => {
+  if (!isValidItemValueType(obj.field as string, obj.value)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Value type does not match expected type for field ${obj.field}`,
+    });
+  }
+});
+
+const advancedCriteriaSchema = z.object({
+  filters: z.array(filterSchema).optional(),
+  asc: sortableFieldSchema.optional(),
+  desc: sortableFieldSchema.optional(),
+  limit: z.number().optional(),
+  offset: z.number().optional(),
+  count: z.boolean().optional(),
+  fetchAll: z.boolean().optional(),
+});
+
+// Runtime schema used internally for validation
+const RUNTIME_CRITERIA_SCHEMA = z.union([
+  z.record(z.any()),
+  z.array(z.record(z.any())),
+  advancedCriteriaSchema,
+]);
+
+// Exposed schema for OpenAI/JSON – use broad schema to avoid deep $ref issues
+const toolSchema = z.object({ criteria: z.any() });
+
+const toolHandler = async ({ params }: any) => {
+  const { criteria } = params;
+
+  // Validate against runtime schema
+  const parsed = RUNTIME_CRITERIA_SCHEMA.safeParse(criteria);
+  if (!parsed.success) {
+    return {
+      content: [
+        { type: "text" as const, text: `Invalid criteria: ${parsed.error.message}` },
+      ],
+    };
+  }
+
+  const response = await searchQuickbooksItems(criteria);
+
+  if (response.isError) {
+    return { content: [{ type: "text" as const, text: `Error searching items: ${response.error}` }] };
+  }
+  const items = response.result;
+  return {
+    content: [
+      { type: "text" as const, text: `Found ${items?.length || 0} items` },
+      ...(items?.map((item) => ({ type: "text" as const, text: JSON.stringify(item) })) || []),
+    ],
+  };
+};
 
 function isValidItemValueType(field: string, value: any): boolean {
   const expected = ITEM_FIELD_TYPE_MAP[field as keyof typeof ITEM_FIELD_TYPE_MAP];
@@ -82,99 +136,10 @@ function isValidItemValueType(field: string, value: any): boolean {
   return Array.isArray(value) ? value.every(check) : check(value);
 }
 
-const criterionSchema = z.object({
-  key: z.string().describe("Simple key (legacy) – any Item property name."),
-  value: z.union([z.string(), z.boolean()]),
-});
-
-const advancedCriterionSchema = z.object({
-  field: filterableFieldSchema,
-  value: z.any(),
-  operator: operatorSchema,
-}).superRefine((obj, ctx) => {
-  if (!isValidItemValueType(obj.field as string, obj.value)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: `Value type does not match expected type for field ${obj.field}`,
-    });
-  }
-});
-
-const toolSchema = z.object({
-  criteria: z
-    .array(advancedCriterionSchema.or(criterionSchema))
-    .optional()
-    .describe(
-      "Filters to apply. Use the advanced form {field,value,operator?} for operators or the simple {key,value} pairs."
-    ),
-  limit: z.number().optional(),
-  offset: z.number().optional(),
-  asc: sortableFieldSchema.optional(),
-  desc: sortableFieldSchema.optional(),
-  count: z.boolean().optional(),
-  fetchAll: z.boolean().optional(),
-});
-
-const toolHandler = async (args: any) => {
-  const { criteria = [], limit = 10, offset = 0, count = false, ...options } =
-    (args.params ?? {}) as z.infer<typeof toolSchema>;
-
-  // Apply safety cap for Copilot Studio
-  const cappedLimit = Math.min(limit, 50);
-
-  // Build criteria to pass to SDK, supporting advanced operator syntax
-  let criteriaToSend: any;
-  if (Array.isArray(criteria) && criteria.length > 0) {
-    const first = criteria[0] as any;
-    if (typeof first === "object" && "field" in first) {
-      // Advanced format with field/value/operator
-      const filters: Record<string, any> = {};
-      criteria.forEach((c: any) => {
-        const key = c.field || c.key;
-        const val = c.value;
-        if (key && key !== 'count') {
-          filters[key] = val;
-        }
-      });
-      criteriaToSend = { ...filters, limit: cappedLimit, offset, ...options };
-    } else {
-      // Legacy format with key/value
-      criteriaToSend = (criteria as Array<{ key: string; value: any }>).reduce<Record<string, any>>(
-        (acc, { key, value }) => {
-          if (value !== undefined && value !== null && key !== 'count') {
-            acc[key] = value;
-          }
-          return acc;
-        },
-        { limit: cappedLimit, offset, ...options }
-      );
-    }
-  } else {
-    // No criteria - just pagination
-    criteriaToSend = { limit: cappedLimit, offset, ...options };
-  }
-
-  const response = await searchQuickbooksItems(criteriaToSend);
-
-  if (response.isError) {
-    return {
-      content: [
-        { type: "text" as const, text: `Error searching items: ${response.error}` },
-      ],
-    };
-  }
-  const items = response.result;
-  return {
-    content: [
-      { type: "text" as const, text: `Found ${items?.length || 0} items` },
-      ...(items?.map((item) => ({ type: "text" as const, text: JSON.stringify(item) })) || []),
-    ],
-  };
-};
-
 export const SearchItemsTool: ToolDefinition<typeof toolSchema> = {
   name: toolName,
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
+  readOnlyHint: true,
 }; 

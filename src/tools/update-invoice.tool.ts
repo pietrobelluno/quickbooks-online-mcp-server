@@ -28,4 +28,5 @@ export const UpdateInvoiceTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
+  destructiveHint: true,
 }; 

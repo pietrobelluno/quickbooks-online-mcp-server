@@ -101,10 +101,9 @@ class QuickbooksClient {
             const response = await this.oauthClient.createToken(req.url);
             const tokens = response.token;
             
-            // Save tokens
+            // Save tokens (session storage handles persistence)
             this.refreshToken = tokens.refresh_token;
             this.realmId = tokens.realmId;
-            this.saveTokensToEnv();
             
             // Send success response
             res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -178,26 +177,6 @@ class QuickbooksClient {
         reject(error);
       });
     });
-  }
-
-  private saveTokensToEnv(): void {
-    const tokenPath = path.join(__dirname, '..', '..', '.env');
-    const envContent = fs.readFileSync(tokenPath, 'utf-8');
-    const envLines = envContent.split('\n');
-    
-    const updateEnvVar = (name: string, value: string) => {
-      const index = envLines.findIndex(line => line.startsWith(`${name}=`));
-      if (index !== -1) {
-        envLines[index] = `${name}=${value}`;
-      } else {
-        envLines.push(`${name}=${value}`);
-      }
-    };
-
-    if (this.refreshToken) updateEnvVar('QUICKBOOKS_REFRESH_TOKEN', this.refreshToken);
-    if (this.realmId) updateEnvVar('QUICKBOOKS_REALM_ID', this.realmId);
-
-    fs.writeFileSync(tokenPath, envLines.join('\n'));
   }
 
   async refreshAccessToken() {

@@ -12,7 +12,7 @@ const toolSchema = z.object({
 });
 
 const toolHandler = async (args: { [x: string]: any }) => {
-  const response = await deleteQuickbooksVendor(args.vendor);
+  const response = await deleteQuickbooksVendor(args.params.vendor);
 
   if (response.isError) {
     return {
@@ -42,4 +42,5 @@ export const DeleteVendorTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
+  destructiveHint: true,
 }; 

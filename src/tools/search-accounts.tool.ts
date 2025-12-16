@@ -3,12 +3,7 @@ import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
 
 const toolName = "search_accounts";
-const toolDescription = `Search chart‑of‑accounts entries using criteria.
-
-Returns up to 10 results by default (max 50 per request).
-Use 'limit' and 'offset' parameters to paginate through results.
-
-Example: { filters: [...], limit: 20, offset: 20 } for results 21-40`;
+const toolDescription = "Search chart‑of‑accounts entries using criteria.";
 
 // Allowed field lists based on QuickBooks Online Account entity documentation. Only these can be
 // used in the search criteria.
@@ -85,13 +80,7 @@ const sortableFieldSchema = z
 
 // Advanced criteria shape
 const operatorSchema = z.enum(["=", "IN", "<", ">", "<=", ">=", "LIKE"]).optional();
-
-const criterionSchema = z.object({
-  key: z.string().describe("Simple key (legacy) – any Account property name."),
-  value: z.union([z.string(), z.boolean()]),
-});
-
-const advancedCriterionSchema = z.object({
+const filterSchema = z.object({
   field: filterableFieldSchema,
   value: z.any(),
   operator: operatorSchema,
@@ -104,73 +93,97 @@ const advancedCriterionSchema = z.object({
   }
 });
 
-const toolSchema = z.object({
-  criteria: z
-    .array(advancedCriterionSchema.or(criterionSchema))
-    .optional()
-    .describe(
-      "Filters to apply. Use the advanced form {field,value,operator?} for operators or the simple {key,value} pairs."
-    ),
-  limit: z.number().optional(),
-  offset: z.number().optional(),
+const advancedCriteriaSchema = z.object({
+  filters: z.array(filterSchema).optional(),
   asc: sortableFieldSchema.optional(),
   desc: sortableFieldSchema.optional(),
+  limit: z.number().optional(),
+  offset: z.number().optional(),
   count: z.boolean().optional(),
   fetchAll: z.boolean().optional(),
 });
 
-const toolHandler = async (args: any) => {
-  const { criteria = [], limit = 10, offset = 0, count = false, ...options } =
-    (args.params ?? {}) as z.infer<typeof toolSchema>;
+// Runtime schema keeps full validation
+const RUNTIME_CRITERIA_SCHEMA = z.union([
+  z.record(z.any()),
+  z.array(z.record(z.any())),
+  advancedCriteriaSchema,
+]);
 
-  // Apply safety cap for Copilot Studio
-  const cappedLimit = Math.min(limit, 50);
+// ---------- Coercion & Normalization ----------
+function coerceAccountFieldValue(field: string, value: any): any {
+  const expected = ACCOUNT_FIELD_TYPE_MAP[field as keyof typeof ACCOUNT_FIELD_TYPE_MAP];
+  if (!expected) return value;
 
-  // Build criteria to pass to SDK, supporting advanced operator syntax
-  let criteriaToSend: any;
-  if (Array.isArray(criteria) && criteria.length > 0) {
-    const first = criteria[0] as any;
-    if (typeof first === "object" && "field" in first) {
-      // Advanced format with field/value/operator
-      const filters: Record<string, any> = {};
-      criteria.forEach((c: any) => {
-        const key = c.field || c.key;
-        const val = c.value;
-        if (key && key !== 'count') {
-          filters[key] = val;
-        }
-      });
-      criteriaToSend = { ...filters, limit: cappedLimit, offset, ...options };
-    } else {
-      // Legacy format with key/value
-      criteriaToSend = (criteria as Array<{ key: string; value: any }>).reduce<Record<string, any>>(
-        (acc, { key, value }) => {
-          if (value !== undefined && value !== null && key !== 'count') {
-            acc[key] = value;
-          }
-          return acc;
-        },
-        { limit: cappedLimit, offset, ...options }
-      );
+  const convert = (v: any): any => {
+    switch (expected) {
+      case "string":
+        return typeof v === "string" ? v : String(v);
+      case "number":
+        return typeof v === "number" ? v : Number(v);
+      case "boolean":
+        return typeof v === "boolean" ? v : (v === "true" || v === 1 || v === "1");
+      case "date":
+        return typeof v === "string" ? v : String(v);
+      default:
+        return v;
     }
-  } else {
-    // No criteria - just pagination
-    criteriaToSend = { limit: cappedLimit, offset, ...options };
+  };
+  return Array.isArray(value) ? value.map(convert) : convert(value);
+}
+
+function normalizeAccountCriteria(criteria: any): any {
+  if (!criteria) return criteria;
+
+  // Advanced format with filters
+  if (criteria.filters && Array.isArray(criteria.filters)) {
+    return {
+      ...criteria,
+      filters: criteria.filters.map((f: any) => ({
+        ...f,
+        value: coerceAccountFieldValue(f.field, f.value),
+      })),
+    };
   }
 
-  const response = await searchQuickbooksAccounts(criteriaToSend);
+  // Array of criteria objects
+  if (Array.isArray(criteria)) {
+    return criteria.map(normalizeAccountCriteria);
+  }
 
+  // Simple key-value map criteria
+  if (typeof criteria === "object") {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(criteria)) {
+      out[k] = coerceAccountFieldValue(k, v);
+    }
+    return out;
+  }
+
+  return criteria;
+}
+
+// Schema exposed to function definition – use broad schema to sidestep $ref errors
+const criteriaSchema = z.any();
+
+const toolSchema = z.object({ criteria: criteriaSchema });
+
+// Tool handler with runtime validation & coercion
+const toolHandler = async ({ params }: any) => {
+  const { criteria } = params;
+  const parsed = RUNTIME_CRITERIA_SCHEMA.safeParse(criteria);
+  if (!parsed.success) {
+    return { content: [{ type: "text" as const, text: `Invalid criteria: ${parsed.error.message}` }] };
+  }
+  const normalized = normalizeAccountCriteria(criteria);
+  const response = await searchQuickbooksAccounts(normalized);
   if (response.isError) {
-    return {
-      content: [
-        { type: "text" as const, text: `Error searching accounts: ${response.error}` },
-      ],
-    };
+    return { content: [{ type: "text" as const, text: `Error searching accounts: ${response.error}` }] };
   }
   const accounts = response.result;
   return {
     content: [
-      { type: "text" as const, text: `Found ${accounts?.length || 0} accounts` },
+      { type: "text" as const, text: `Found ${accounts?.length || 0} accounts:` },
       ...(accounts?.map((acc: any) => ({ type: "text" as const, text: JSON.stringify(acc) })) || []),
     ],
   };
@@ -182,4 +195,5 @@ export const SearchAccountsTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
+  readOnlyHint: true,
 }; 

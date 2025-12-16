@@ -6,4 +6,6 @@ export interface ToolDefinition<T extends z.ZodType<any, any>> {
   description: string;
   schema: T;
   handler: ToolCallback<{ [key: string]: T }>;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
 }

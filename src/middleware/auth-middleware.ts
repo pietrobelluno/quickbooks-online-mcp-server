@@ -5,9 +5,7 @@
  * Supports both external OAuth (Copilot Studio) and internal OAuth (.env tokens).
  */
 
-import { getUserRealmStorage } from '../storage/user-realm-storage.js';
 import { config } from '../config/server-config.js';
-import { getRealmIdByState, clearOAuthState } from '../storage/oauth-state-storage.js';
 
 export interface AuthContext {
   /** OAuth access token from Copilot Studio */
@@ -78,58 +76,13 @@ export function createAuthContext(headers: Record<string, string>): AuthContext 
   const context: AuthContext = {
     accessToken,
     userId,
-    isExternalAuth: !!accessToken && config.authMode === 'external',
+    isExternalAuth: !!accessToken && config.authMode === 'claude-desktop',
   };
 
-  // Priority 1: Try to get realm ID from storage if we have a user ID
-  if (userId) {
-    const storage = getUserRealmStorage(config.realmIdStoragePath);
-    context.realmId = storage.getRealmId(userId);
-  }
-
-  // Priority 2: If no realm ID but we have OAuth state, try state-based lookup
-  // This happens on FIRST API call after OAuth - state bridges to realm ID
-  if (!context.realmId && oauthState) {
-    const realmId = getRealmIdByState(oauthState);
-    if (realmId && userId) {
-      console.log(`  ✓ First-time realm ID discovery via OAuth state`);
-      context.realmId = realmId;
-
-      // Permanently store this user → realm mapping
-      storeUserRealmId(userId, realmId);
-
-      // Clear temporary state mapping (no longer needed)
-      clearOAuthState(oauthState);
-    } else if (realmId && !userId) {
-      console.warn(`  ⚠ Found realm ID for state but no user ID in headers`);
-      // Still use the realm ID even without user ID (fallback for single-user scenarios)
-      context.realmId = realmId;
-    }
-  }
-
-  // Priority 3: Fall back to environment variable realm ID
-  if (!context.realmId && process.env.QUICKBOOKS_REALM_ID) {
-    context.realmId = process.env.QUICKBOOKS_REALM_ID;
-  }
+  // Note: For Claude Desktop, realm ID is now managed via QuickBooks session storage
+  // This auth middleware is kept for legacy compatibility only
 
   return context;
-}
-
-/**
- * Store realm ID for a user
- */
-export function storeUserRealmId(userId: string, realmId: string): void {
-  const storage = getUserRealmStorage(config.realmIdStoragePath);
-  storage.setRealmId(userId, realmId);
-  console.log(`Stored realm ID for user: ${userId}`);
-}
-
-/**
- * Get realm ID for a user
- */
-export function getUserRealmId(userId: string): string | undefined {
-  const storage = getUserRealmStorage(config.realmIdStoragePath);
-  return storage.getRealmId(userId);
 }
 
 // Global auth context (will be replaced with request-scoped context in HTTP mode)
