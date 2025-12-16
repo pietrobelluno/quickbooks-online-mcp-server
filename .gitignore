@@ -1,4 +1,6 @@
+.env
 .qodo
 
 node_modules
 dist
+

@@ -1,21 +1,27 @@
 {
     "name": "@qboapi/qbo-mcp-server",
-    "version": "0.0.1",
-    "description": "MCP server implementation for QuickBooks Online integration",
+    "version": "1.0.0",
+    "description": "MCP server implementation for QuickBooks Online integration with automatic OAuth",
     "license": "MIT",
-    "main": "dist/index.js",
+    "main": "dist/src/index.js",
     "type": "module",
-    "bin": "./dist/index.js",
+    "bin": "./dist/src/index.js",
     "files": [
       "dist"
     ],
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/pietrobellunopilau/quickbooks-online-mcp-server.git"
+    },
+    "publishConfig": {
+      "registry": "https://npm.pkg.github.com"
+    },
     "scripts": {
-      "build": "tsc && shx chmod +x dist/*.js",
+      "build": "tsc && shx chmod +x dist/src/index.js",
       "prepare": "npm run build",
       "watch": "tsc --watch",
       "lint:fix": "eslint --fix",
-      "lint": "eslint .",
-      "auth": "node dist/auth-server.js"
+      "lint": "eslint ."
     },
     "dependencies": {
       "@modelcontextprotocol/sdk": "^1.6.0",

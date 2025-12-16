@@ -66,6 +66,10 @@ import { UpdatePurchaseTool } from "./tools/update-purchase.tool.js";
 import { DeletePurchaseTool } from "./tools/delete-purchase.tool.js";
 import { SearchPurchasesTool } from "./tools/search-purchases.tool.js";
 
+// Query tools
+import { QueryDataTool } from "./tools/query-data.tool.js";
+import { QueryReportsTool } from "./tools/query-reports.tool.js";
+
 const main = async () => {
   // Create an MCP server
   const server = QuickbooksMCPServer.GetServer();
@@ -155,6 +159,10 @@ const main = async () => {
   RegisterTool(server, UpdatePurchaseTool);
   RegisterTool(server, DeletePurchaseTool);
   RegisterTool(server, SearchPurchasesTool);
+
+  // Add query tools
+  RegisterTool(server, QueryDataTool);
+  RegisterTool(server, QueryReportsTool);
 
   // Start receiving messages on stdin and sending messages on stdout
   const transport = new StdioServerTransport();
