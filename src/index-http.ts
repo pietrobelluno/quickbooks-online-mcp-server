@@ -7,13 +7,14 @@
  * Supports OAuth 2.0 tokens from Copilot Studio (multi-user).
  */
 
-import express from 'express';
-import rateLimit from 'express-rate-limit';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import express from "express";
+import rateLimit from "express-rate-limit";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { QuickbooksMCPServer } from "./server/qbo-mcp-server.js";
 import { RegisterTool } from "./helpers/register-tool.js";
 import { config } from "./config/server-config.js";
 import { quickbooksClient } from "./clients/quickbooks-client.js";
+import { generateAuthCode } from "./utils/token-generator.js";
 
 // Import read-only tools (Search + Get/Read for all entities)
 // Core Business
@@ -94,26 +95,36 @@ export function registerHTTPTool(name: string, handler: any) {
 // Helper: Extract Bearer token from Authorization header
 function extractBearerToken(authHeader: string): string | undefined {
   if (!authHeader) return undefined;
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') return undefined;
+  const parts = authHeader.split(" ");
+  if (parts.length !== 2 || parts[0] !== "Bearer") return undefined;
   return parts[1];
 }
 
 // Simple MCP request/response handler
 async function handleMCPRequest(method: string, params: any): Promise<any> {
   switch (method) {
-    case 'tools/list':
+    case "tools/list":
       // Return list of registered tools with JSON Schema format
-      const tools = Array.from(toolRegistry.values()).map(tool => ({
-        name: tool.name,
-        description: tool.description,
-        inputSchema: zodToJsonSchema(tool.schema, { target: 'jsonSchema7' }),
-        ...(tool.readOnlyHint !== undefined && { readOnlyHint: tool.readOnlyHint }),
-        ...(tool.destructiveHint !== undefined && { destructiveHint: tool.destructiveHint }),
-      }));
+      const tools = Array.from(toolRegistry.values()).map((tool) => {
+        const jsonSchema = zodToJsonSchema(tool.schema, {
+          target: "jsonSchema7",
+        }) as any;
+
+        return {
+          name: tool.name,
+          description: tool.description,
+          inputSchema: jsonSchema,
+          ...(tool.readOnlyHint !== undefined && {
+            readOnlyHint: tool.readOnlyHint,
+          }),
+          ...(tool.destructiveHint !== undefined && {
+            destructiveHint: tool.destructiveHint,
+          }),
+        };
+      });
       return { tools };
 
-    case 'tools/call':
+    case "tools/call":
       // Call a specific tool
       const tool = toolRegistry.get(params.name);
       if (!tool) {
@@ -125,25 +136,25 @@ async function handleMCPRequest(method: string, params: any): Promise<any> {
       const result = await tool.handler({ params: params.arguments || {} });
       return result;
 
-    case 'initialize':
+    case "initialize":
       // Handle initialization
       return {
-        protocolVersion: '2024-11-05',
+        protocolVersion: "2024-11-05",
         capabilities: {
           tools: {},
         },
         serverInfo: {
-          name: 'QuickBooks Online MCP Server',
-          version: '1.0.0',
+          name: "QuickBooks Online MCP Server",
+          version: "1.0.0",
         },
       };
 
-    case 'notifications/initialized':
+    case "notifications/initialized":
       // Handle notification that client has initialized
       // This is a notification, so we just acknowledge it
       return {};
 
-    case 'ping':
+    case "ping":
       // Handle ping request
       return {};
 
@@ -163,6 +174,12 @@ const main = async () => {
 ╚════════════════════════════════════════════════════════════════╝
   `);
 
+  // Eager-load MCP token storage on startup (so reconnections work without re-auth)
+  const { getMCPTokenStorage } = await import('./storage/mcp-token-storage.js');
+  const mcpTokenStorage = getMCPTokenStorage();
+  await mcpTokenStorage.initialize();
+  console.log('✓ MCP token storage initialized\n');
+
   // Create MCP server (for SDK compatibility)
   const server = QuickbooksMCPServer.GetServer();
 
@@ -170,39 +187,71 @@ const main = async () => {
   const tools = [
     // Read-only tools (23 tools = 21 + 2 query tools)
     // Query tools (2 powerful tools for flexible querying)
-    QueryDataTool, QueryReportsTool,
+    QueryDataTool,
+    QueryReportsTool,
 
     // Core Business (8 tools)
-    SearchCustomersTool, GetCustomerTool,
-    SearchInvoicesTool, ReadInvoiceTool,
-    SearchItemsTool, ReadItemTool,
-    SearchVendorsTool, GetVendorTool,
+    SearchCustomersTool,
+    GetCustomerTool,
+    SearchInvoicesTool,
+    ReadInvoiceTool,
+    SearchItemsTool,
+    ReadItemTool,
+    SearchVendorsTool,
+    GetVendorTool,
 
     // Financial (8 tools)
-    SearchBillsTool, GetBillTool,
-    SearchEstimatesTool, GetEstimateTool,
-    SearchBillPaymentsTool, GetBillPaymentTool,
-    SearchPurchasesTool, GetPurchaseTool,
+    SearchBillsTool,
+    GetBillTool,
+    SearchEstimatesTool,
+    GetEstimateTool,
+    SearchBillPaymentsTool,
+    GetBillPaymentTool,
+    SearchPurchasesTool,
+    GetPurchaseTool,
 
     // Other (5 tools)
-    SearchEmployeesTool, GetEmployeeTool,
-    SearchJournalEntriesTool, GetJournalEntryTool,
+    SearchEmployeesTool,
+    GetEmployeeTool,
+    SearchJournalEntriesTool,
+    GetJournalEntryTool,
     SearchAccountsTool,
 
     // Destructive tools (31 tools)
     // Create tools (11 tools)
-    CreateCustomerTool, CreateInvoiceTool, CreateItemTool, CreateVendorTool,
-    CreateBillTool, CreateEstimateTool, CreateBillPaymentTool, CreatePurchaseTool,
-    CreateEmployeeTool, CreateJournalEntryTool, CreateAccountTool,
+    CreateCustomerTool,
+    CreateInvoiceTool,
+    CreateItemTool,
+    CreateVendorTool,
+    CreateBillTool,
+    CreateEstimateTool,
+    CreateBillPaymentTool,
+    CreatePurchaseTool,
+    CreateEmployeeTool,
+    CreateJournalEntryTool,
+    CreateAccountTool,
 
     // Update tools (13 tools)
-    UpdateCustomerTool, UpdateInvoiceTool, UpdateItemTool, UpdateVendorTool,
-    UpdateBillTool, UpdateEstimateTool, UpdateBillPaymentTool, UpdatePurchaseTool,
-    UpdateEmployeeTool, UpdateJournalEntryTool, UpdateAccountTool,
+    UpdateCustomerTool,
+    UpdateInvoiceTool,
+    UpdateItemTool,
+    UpdateVendorTool,
+    UpdateBillTool,
+    UpdateEstimateTool,
+    UpdateBillPaymentTool,
+    UpdatePurchaseTool,
+    UpdateEmployeeTool,
+    UpdateJournalEntryTool,
+    UpdateAccountTool,
 
     // Delete tools (7 tools)
-    DeleteCustomerTool, DeleteVendorTool, DeleteBillTool, DeleteEstimateTool,
-    DeleteBillPaymentTool, DeletePurchaseTool, DeleteJournalEntryTool
+    DeleteCustomerTool,
+    DeleteVendorTool,
+    DeleteBillTool,
+    DeleteEstimateTool,
+    DeleteBillPaymentTool,
+    DeletePurchaseTool,
+    DeleteJournalEntryTool,
   ];
 
   for (const tool of tools) {
@@ -210,13 +259,15 @@ const main = async () => {
     registerHTTPTool(tool.name, tool); // Register with HTTP server
   }
 
-  console.log(`✓ Registered ${tools.length} QuickBooks tools (23 read-only + 29 destructive)`);
+  console.log(
+    `✓ Registered ${tools.length} QuickBooks tools (23 read-only + 29 destructive)`
+  );
 
   // Create Express app
   const app = express();
 
   // Trust proxy (ALB is 1 hop away)
-  app.set('trust proxy', 1);
+  app.set("trust proxy", 1);
 
   // Body parsers - support both JSON and URL-encoded (OAuth uses URL-encoded)
   app.use(express.json());
@@ -226,7 +277,7 @@ const main = async () => {
   const mcpLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // Limit each IP to 100 requests per window
-    message: 'Too many requests from this IP, please try again later.',
+    message: "Too many requests from this IP, please try again later.",
     standardHeaders: true, // Return rate limit info in headers
     legacyHeaders: false, // Disable X-RateLimit-* headers
   });
@@ -235,29 +286,123 @@ const main = async () => {
   const oauthLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 10, // Limit each IP to 10 OAuth requests per window
-    message: 'Too many OAuth requests from this IP, please try again later.',
+    message: "Too many OAuth requests from this IP, please try again later.",
     standardHeaders: true,
     legacyHeaders: false,
   });
 
+  // Log all requests for debugging
+  app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+    next();
+  });
+
   // Health check endpoint
-  app.get('/health', (req, res) => {
-    res.json({ status: 'healthy', server: 'QuickBooks MCP Server' });
+  app.get("/health", (req, res) => {
+    res.json({ status: "healthy", server: "QuickBooks MCP Server" });
   });
 
   // Claude Desktop OAuth 2.0 endpoints (with rate limiting)
-  const { handleAuthorizeEndpoint } = await import('./endpoints/authorize-endpoint.js');
-  const { handleTokenEndpoint } = await import('./endpoints/token-endpoint.js');
+  const { handleAuthorizeEndpoint } = await import(
+    "./endpoints/authorize-endpoint.js"
+  );
+  const { handleTokenEndpoint } = await import("./endpoints/token-endpoint.js");
+  const { handleRegisterEndpoint } = await import("./endpoints/register-endpoint.js");
 
-  app.get('/authorize', oauthLimiter, handleAuthorizeEndpoint);
-  app.post('/token', oauthLimiter, handleTokenEndpoint);
+  // OAuth 2.0 Authorization Server Metadata (RFC 8414)
+  // This endpoint allows Claude to discover OAuth configuration
+  app.get("/.well-known/oauth-authorization-server", (req, res) => {
+    const baseUrl = `https://${req.get('host')}`;
+    res.json({
+      issuer: baseUrl,
+      authorization_endpoint: `${baseUrl}/authorize`,
+      token_endpoint: `${baseUrl}/token`,
+      registration_endpoint: `${baseUrl}/register`,
+      token_endpoint_auth_methods_supported: ["none"],
+      response_types_supported: ["code"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
+      code_challenge_methods_supported: ["S256"],
+      scopes_supported: ["claudeai"]
+    });
+  });
 
-  console.log('✓ Registered Claude Desktop OAuth endpoints: /authorize, /token');
+  // Dynamic Client Registration (RFC 7591)
+  app.post("/register", oauthLimiter, handleRegisterEndpoint);
+
+  app.get("/authorize", oauthLimiter, handleAuthorizeEndpoint);
+
+  // Add detailed logging middleware for /token endpoint
+  app.post("/token", oauthLimiter, (req, res, next) => {
+    console.log('\n[DEBUG] /token request received');
+    console.log('  Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('  Body:', JSON.stringify(req.body, null, 2));
+    next();
+  }, handleTokenEndpoint);
+
+  // MCP Token Refresh Endpoint - allows Claude Desktop to refresh expired MCP tokens
+  app.post("/token/refresh", oauthLimiter, async (req, res) => {
+    try {
+      const { refresh_token } = req.body;
+
+      if (!refresh_token) {
+        return res.status(400).json({ error: "missing_refresh_token", error_description: "refresh_token is required" });
+      }
+
+      console.log(`\n→ MCP Token Refresh Request`);
+      console.log(`  → Refresh token: ${refresh_token.substring(0, 20)}...`);
+
+      const mcpTokenStorage = getMCPTokenStorage();
+      await mcpTokenStorage.initialize();
+
+      // Get session by refresh token
+      const result = mcpTokenStorage.getSessionByRefreshToken(refresh_token);
+
+      if (!result) {
+        console.error("  ✗ Invalid or expired refresh token");
+        return res.status(401).json({ error: "invalid_grant", error_description: "Refresh token is invalid or expired" });
+      }
+
+      const { session: oldSession } = result;
+
+      // Generate new access token and rotate refresh token (OAuth 2.1 best practice)
+      const newAccessToken = generateAuthCode();
+      const newRefreshToken = generateAuthCode(); // Generate new refresh token
+
+      console.log(`  ✓ Issuing new MCP access token`);
+      console.log(`  → New access token: ${newAccessToken.substring(0, 20)}...`);
+      console.log(`  → New refresh token: ${newRefreshToken.substring(0, 20)}... (rotated)`);
+      console.log(`  → Session ID: ${oldSession.sessionId}`);
+
+      // Store new token with rotated refresh token
+      await mcpTokenStorage.storeToken(newAccessToken, {
+        sessionId: oldSession.sessionId,
+        userId: oldSession.userId,
+        refreshToken: newRefreshToken,
+      });
+
+      // Return new tokens
+      res.json({
+        access_token: newAccessToken,
+        token_type: "Bearer",
+        expires_in: 3600, // 1 hour
+        refresh_token: newRefreshToken,
+      });
+
+      console.log("  ✓ MCP token refreshed successfully");
+    } catch (error: any) {
+      console.error("  ✗ Token refresh error:", error);
+      res.status(500).json({ error: "server_error", error_description: error.message });
+    }
+  });
+
+  console.log(
+    "✓ Registered Claude Desktop OAuth endpoints: /authorize, /token, /token/refresh"
+  );
 
   // Legacy OAuth initiation endpoint (kept for backward compatibility, but not used by Claude Desktop)
-  app.get('/start-oauth', (req, res) => {
+  app.get("/start-oauth", (req, res) => {
     try {
-      console.log('\n→ OAuth initiation requested');
+      console.log("\n→ OAuth initiation requested");
 
       const userId = req.query.userId as string;
 
@@ -275,18 +420,22 @@ const main = async () => {
       console.log(`  ✓ Initiating OAuth for user: ${userId}`);
 
       // Create state with user ID for correlation
-      const state = Buffer.from(JSON.stringify({
-        userId,
-        timestamp: Date.now(),
-      })).toString('base64');
+      const state = Buffer.from(
+        JSON.stringify({
+          userId,
+          timestamp: Date.now(),
+        })
+      ).toString("base64");
 
-      const redirectUri = process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:8000/callback';
+      const redirectUri =
+        process.env.QUICKBOOKS_REDIRECT_URI || "http://localhost:8000/callback";
 
       // Generate QuickBooks OAuth URL
-      const authUrl = `https://appcenter.intuit.com/connect/oauth2?` +
-        `client_id=${encodeURIComponent(process.env.QUICKBOOKS_CLIENT_ID || '')}&` +
+      const authUrl =
+        `https://appcenter.intuit.com/connect/oauth2?` +
+        `client_id=${encodeURIComponent(process.env.QUICKBOOKS_CLIENT_ID || "")}&` +
         `redirect_uri=${encodeURIComponent(redirectUri)}&` +
-        `scope=${encodeURIComponent('com.intuit.quickbooks.accounting')}&` +
+        `scope=${encodeURIComponent("com.intuit.quickbooks.accounting")}&` +
         `response_type=code&` +
         `state=${encodeURIComponent(state)}`;
 
@@ -294,9 +443,8 @@ const main = async () => {
 
       // Redirect user to QuickBooks
       res.redirect(authUrl);
-
     } catch (error: any) {
-      console.error('Error initiating OAuth:', error);
+      console.error("Error initiating OAuth:", error);
       res.status(500).send(`
         <html>
           <body style="font-family: Arial; padding: 40px; text-align: center;">
@@ -309,9 +457,9 @@ const main = async () => {
   });
 
   // OAuth callback intercept endpoint (for Claude Desktop OAuth flow)
-  app.get('/oauth/callback', async (req, res) => {
+  app.get("/oauth/callback", async (req, res) => {
     try {
-      console.log('\n→ OAuth callback received from QuickBooks');
+      console.log("\n→ OAuth callback received from QuickBooks");
 
       // Extract parameters from QuickBooks callback
       const code = req.query.code as string;
@@ -335,10 +483,10 @@ const main = async () => {
 
       // Validate required parameters
       if (!code || !realmId || !state) {
-        console.error('  ✗ Missing required OAuth parameters');
-        console.error(`  code: ${code ? 'present' : 'missing'}`);
-        console.error(`  realmId: ${realmId ? 'present' : 'missing'}`);
-        console.error(`  state: ${state ? 'present' : 'missing'}`);
+        console.error("  ✗ Missing required OAuth parameters");
+        console.error(`  code: ${code ? "present" : "missing"}`);
+        console.error(`  realmId: ${realmId ? "present" : "missing"}`);
+        console.error(`  state: ${state ? "present" : "missing"}`);
         return res.status(400).send(`
           <html>
             <body style="font-family: Arial; padding: 40px; text-align: center;">
@@ -350,15 +498,23 @@ const main = async () => {
         `);
       }
 
-      console.log(`  ✓ Captured realmId: ${realmId} (THIS IS THE CRITICAL PIECE!)`);
+      console.log(
+        `  ✓ Captured realmId: ${realmId} (company identifier)`
+      );
       console.log(`  ✓ State token: ${state.substring(0, 20)}...`);
 
       // Import Claude Desktop OAuth utilities
-      const { decodeQBState } = await import('./utils/token-generator.js');
-      const { getQBOAuthStateStorage } = await import('./storage/qb-oauth-state-storage.js');
-      const { getQuickBooksSessionStorage } = await import('./storage/quickbooks-session-storage.js');
-      const { getAuthCodeStorage } = await import('./storage/auth-code-storage.js');
-      const { generateAuthCode } = await import('./utils/token-generator.js');
+      const { decodeQBState } = await import("./utils/token-generator.js");
+      const { getQBOAuthStateStorage } = await import(
+        "./storage/qb-oauth-state-storage.js"
+      );
+      const { getQuickBooksSessionStorage } = await import(
+        "./storage/quickbooks-session-storage.js"
+      );
+      const { getAuthCodeStorage } = await import(
+        "./storage/auth-code-storage.js"
+      );
+      const { generateAuthCode } = await import("./utils/token-generator.js");
 
       // Decode QB state to get claudeState and sessionId
       let claudeState: string;
@@ -368,10 +524,12 @@ const main = async () => {
         const decoded = decodeQBState(state);
         claudeState = decoded.claudeState;
         sessionId = decoded.sessionId;
-        console.log(`  ✓ Decoded QB state → claudeState: ${claudeState.substring(0, 20)}...`);
+        console.log(
+          `  ✓ Decoded QB state → claudeState: ${claudeState.substring(0, 20)}...`
+        );
         console.log(`  ✓ Decoded QB state → sessionId: ${sessionId}`);
       } catch (decodeError) {
-        console.error('  ✗ Failed to decode QB state:', decodeError);
+        console.error("  ✗ Failed to decode QB state:", decodeError);
         return res.status(400).send(`
           <html>
             <body style="font-family: Arial; padding: 40px; text-align: center;">
@@ -383,54 +541,104 @@ const main = async () => {
         `);
       }
 
-      // Exchange QB authorization code for tokens
-      console.log('  → Exchanging QuickBooks authorization code for tokens...');
-
-      let qbTokens: any;
-      try {
-        // Use the OAuth client to exchange code for tokens
-        const fullCallbackUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
-        qbTokens = await quickbooksClient['oauthClient'].createToken(fullCallbackUrl);
-        console.log('  ✓ Successfully exchanged code for QuickBooks tokens');
-      } catch (tokenError) {
-        console.error('  ✗ Failed to exchange code for tokens:', tokenError);
-        return res.status(500).send(`
-          <html>
-            <body style="font-family: Arial; padding: 40px; text-align: center;">
-              <h2 style="color: #d32f2f;">Token Exchange Failed</h2>
-              <p>Failed to exchange authorization code for QuickBooks tokens.</p>
-              <p>Please try again or contact support.</p>
-            </body>
-          </html>
-        `);
-      }
-
-      // Extract tokens from response
-      const accessToken = qbTokens.token.access_token;
-      const refreshToken = qbTokens.token.refresh_token;
-      const expiresIn = qbTokens.token.expires_in; // seconds
-
-      console.log(`  ✓ Access token received`);
-      console.log(`  ✓ Refresh token received`);
-      console.log(`  ✓ Expires in: ${expiresIn} seconds`);
-
-      // Store QuickBooks session with realmId (THIS IS THE ANSWER TO THE USER'S QUESTION!)
+      // ========== SHARED CONNECTION LOGIC ==========
+      // Check if this company (realmId) already has an OAuth connection
       const qbSessionStorage = getQuickBooksSessionStorage();
       await qbSessionStorage.initialize();
-      await qbSessionStorage.storeSession(sessionId, {
-        qbAccessToken: accessToken,
-        qbRefreshToken: refreshToken,
-        qbTokenExpiresAt: Date.now() + (expiresIn * 1000),
-        realmId: realmId, // ← THE CRITICAL REALMID STORAGE!
-        createdAt: Date.now(),
-      });
+      const existingConnection = qbSessionStorage.getSessionByRealmId(realmId);
 
-      console.log(`  ✓ ✓ ✓ STORED QB SESSION WITH REALMID: ${sessionId} → ${realmId}`);
-      console.log('  → This session is now available on ALL devices (mobile, desktop, web)!');
+      // Check if tokens are valid (not expired or about to expire soon)
+      // Require 30 minutes validity to ensure refresh token is still good
+      const isTokenValid = existingConnection &&
+        existingConnection.session.qbTokenExpiresAt > Date.now() + (30 * 60 * 1000); // Valid for at least 30 more minutes
+
+      if (existingConnection && isTokenValid) {
+        // ✅ Company already connected with VALID tokens! Reuse them (shared connection)
+        console.log(`  ✓ Company already connected! Using existing session`);
+        console.log(`  ✓ Existing sessionId: ${existingConnection.sessionId}`);
+        console.log(`  ✓ Tokens valid - shared connection enabled`);
+
+        // Link this user's new sessionId to the existing company tokens
+        await qbSessionStorage.storeSession(sessionId, {
+          qbAccessToken: existingConnection.session.qbAccessToken,
+          qbRefreshToken: existingConnection.session.qbRefreshToken,
+          qbTokenExpiresAt: existingConnection.session.qbTokenExpiresAt,
+          realmId: realmId,
+          createdAt: Date.now(),
+        });
+
+        console.log(
+          `  ✓ ✓ ✓ LINKED NEW USER SESSION: ${sessionId} → ${realmId} (shared)`
+        );
+        console.log(
+          `  → User can now access company data without replacing the admin!`
+        );
+      } else {
+        // Token expired or no existing connection - need fresh OAuth
+        if (existingConnection) {
+          console.log(`  ⚠ Existing connection found but tokens expired - getting fresh tokens`);
+          // Delete the expired session
+          await qbSessionStorage.deleteSession(existingConnection.sessionId);
+        } else {
+          console.log(`  → No existing connection for this company`);
+        }
+        // ⚠️ New company connection - exchange authorization code for tokens
+        console.log("  → New company connection - exchanging code for tokens...");
+
+        let qbTokens: any;
+        try {
+          // Use the OAuth client to exchange code for tokens
+          const fullCallbackUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+          qbTokens =
+            await quickbooksClient["oauthClient"].createToken(fullCallbackUrl);
+          console.log("  ✓ Successfully exchanged code for QuickBooks tokens");
+        } catch (tokenError) {
+          console.error("  ✗ Failed to exchange code for tokens:", tokenError);
+          return res.status(500).send(`
+            <html>
+              <body style="font-family: Arial; padding: 40px; text-align: center;">
+                <h2 style="color: #d32f2f;">Token Exchange Failed</h2>
+                <p>Failed to exchange authorization code for QuickBooks tokens.</p>
+                <p>Please try again or contact support.</p>
+              </body>
+            </html>
+          `);
+        }
+
+        // Extract tokens from response
+        const accessToken = qbTokens.token.access_token;
+        const refreshToken = qbTokens.token.refresh_token;
+        const expiresIn = qbTokens.token.expires_in; // seconds
+
+        console.log(`  ✓ Access token received (length: ${accessToken?.length || 0})`);
+        console.log(`  ✓ Refresh token received: ${refreshToken?.substring(0, 25)}...`);
+        console.log(`  ✓ Refresh token format: ${refreshToken?.startsWith('RT1-') ? 'Valid QB format' : 'UNEXPECTED FORMAT!'}`);
+        console.log(`  ✓ Refresh token length: ${refreshToken?.length || 0}`);
+        console.log(`  ✓ Expires in: ${expiresIn} seconds`);
+        console.log(`  ✓ Full token response keys:`, Object.keys(qbTokens.token || {}));
+
+        // Store QuickBooks session with realmId
+        await qbSessionStorage.storeSession(sessionId, {
+          qbAccessToken: accessToken,
+          qbRefreshToken: refreshToken,
+          qbTokenExpiresAt: Date.now() + expiresIn * 1000,
+          realmId: realmId,
+          createdAt: Date.now(),
+        });
+
+        console.log(
+          `  ✓ ✓ ✓ STORED NEW QB SESSION: ${sessionId} → ${realmId}`
+        );
+        console.log(
+          "  → This is the first connection for this company!"
+        );
+      }
 
       // Generate MCP authorization code for Claude Desktop
       const mcpAuthCode = generateAuthCode();
-      console.log(`  ✓ Generated MCP auth code: ${mcpAuthCode.substring(0, 16)}...`);
+      console.log(
+        `  ✓ Generated MCP auth code: ${mcpAuthCode.substring(0, 16)}...`
+      );
 
       // Store authorization code
       const authCodeStorage = getAuthCodeStorage();
@@ -439,24 +647,29 @@ const main = async () => {
         claudeState,
       });
 
-      console.log('  ✓ Stored authorization code');
+      console.log("  ✓ Stored authorization code");
 
       // Clean up QB OAuth state (no longer needed)
       const qbOAuthStateStorage = getQBOAuthStateStorage();
       qbOAuthStateStorage.deleteQBState(state);
 
       // Build Claude callback URL
-      const claudeRedirectUri = process.env.CLAUDE_REDIRECT_URI || 'https://claude.ai/api/mcp/auth_callback';
+      const claudeRedirectUri =
+        process.env.CLAUDE_REDIRECT_URI ||
+        "https://claude.ai/api/mcp/auth_callback";
       const claudeCallbackUrl = `${claudeRedirectUri}?code=${mcpAuthCode}&state=${claudeState}`;
 
-      console.log(`  ✓ Redirecting to Claude: ${claudeCallbackUrl.substring(0, 80)}...`);
-      console.log('  → Claude will exchange this code for an MCP token at /token');
+      console.log(
+        `  ✓ Redirecting to Claude: ${claudeCallbackUrl.substring(0, 80)}...`
+      );
+      console.log(
+        "  → Claude will exchange this code for an MCP token at /token"
+      );
 
       // Redirect to Claude
       res.redirect(claudeCallbackUrl);
-
     } catch (error: any) {
-      console.error('Error in OAuth callback:', error);
+      console.error("Error in OAuth callback:", error);
       res.status(500).send(`
         <html>
           <body style="font-family: Arial; padding: 40px; text-align: center;">
@@ -470,15 +683,15 @@ const main = async () => {
   });
 
   // Disconnect endpoint (required by Intuit for production apps)
-  app.get('/disconnect', async (req, res) => {
+  app.get("/disconnect", async (req, res) => {
     try {
-      console.log('\n→ QuickBooks disconnect request received');
+      console.log("\n→ QuickBooks disconnect request received");
 
       // Extract realm ID from query parameters (sent by QuickBooks)
       const realmId = req.query.realmId as string;
 
       if (!realmId) {
-        console.warn('  ⚠ Disconnect called without realm ID');
+        console.warn("  ⚠ Disconnect called without realm ID");
         return res.status(400).send(`
           <html>
             <body style="font-family: Arial; padding: 40px; text-align: center;">
@@ -492,7 +705,9 @@ const main = async () => {
       console.log(`  → Disconnecting realm ID: ${realmId}`);
 
       // Import Claude Desktop storage
-      const { getQuickBooksSessionStorage } = await import('./storage/quickbooks-session-storage.js');
+      const { getQuickBooksSessionStorage } = await import(
+        "./storage/quickbooks-session-storage.js"
+      );
 
       // Find session with this realm ID (reverse lookup)
       const qbSessionStorage = getQuickBooksSessionStorage();
@@ -518,7 +733,9 @@ const main = async () => {
       } else {
         // Realm ID not found in storage (maybe already deleted, or never connected via our system)
         console.warn(`  ⚠ Realm ID ${realmId} not found in storage`);
-        console.log(`  → This could be normal if user never completed OAuth flow`);
+        console.log(
+          `  → This could be normal if user never completed OAuth flow`
+        );
 
         return res.status(200).send(`
           <html>
@@ -531,7 +748,7 @@ const main = async () => {
         `);
       }
     } catch (error: any) {
-      console.error('Error handling disconnect:', error);
+      console.error("Error handling disconnect:", error);
       return res.status(500).send(`
         <html>
           <body style="font-family: Arial; padding: 40px; text-align: center;">
@@ -545,7 +762,7 @@ const main = async () => {
   });
 
   // End-User License Agreement endpoint
-  app.get('/eula', (req, res) => {
+  app.get("/eula", (req, res) => {
     res.status(200).send(`
       <!DOCTYPE html>
       <html lang="en">
@@ -612,7 +829,7 @@ const main = async () => {
   });
 
   // Privacy Policy endpoint
-  app.get('/privacy', (req, res) => {
+  app.get("/privacy", (req, res) => {
     res.status(200).send(`
       <!DOCTYPE html>
       <html lang="en">
@@ -698,7 +915,8 @@ const main = async () => {
   });
 
   // Main MCP endpoint (with rate limiting)
-  app.post('/mcp', mcpLimiter, async (req, res) => {
+  // MCP endpoint handler (shared between / and /mcp)
+  const mcpHandler = async (req: any, res: any) => {
     try {
       console.log(`\n→ Incoming MCP request from Claude Desktop`);
 
@@ -709,16 +927,18 @@ const main = async () => {
 
       // Extract MCP token from Authorization header
       const authHeader = req.headers.authorization || req.headers.Authorization;
-      const mcpToken = authHeader ? extractBearerToken(authHeader as string) : undefined;
+      const mcpToken = authHeader
+        ? extractBearerToken(authHeader as string)
+        : undefined;
 
       if (!mcpToken) {
-        console.error('  ✗ Missing Authorization header');
+        console.error("  ✗ Missing Authorization header");
         return res.status(401).json({
-          jsonrpc: '2.0',
+          jsonrpc: "2.0",
           id,
           error: {
             code: -32001,
-            message: 'Missing Authorization header. Please authenticate first.',
+            message: "Missing Authorization header. Please authenticate first.",
           },
         });
       }
@@ -726,9 +946,15 @@ const main = async () => {
       console.log(`  ✓ MCP token validated`);
 
       // Import Claude Desktop auth utilities
-      const { getMCPTokenStorage } = await import('./storage/mcp-token-storage.js');
-      const { getQuickBooksSessionStorage } = await import('./storage/quickbooks-session-storage.js');
-      const { getTokenRefreshService } = await import('./services/token-refresh-service.js');
+      const { getMCPTokenStorage } = await import(
+        "./storage/mcp-token-storage.js"
+      );
+      const { getQuickBooksSessionStorage } = await import(
+        "./storage/quickbooks-session-storage.js"
+      );
+      const { getTokenRefreshService } = await import(
+        "./services/token-refresh-service.js"
+      );
 
       // Validate MCP token
       const mcpTokenStorage = getMCPTokenStorage();
@@ -736,13 +962,13 @@ const main = async () => {
       const tokenSession = mcpTokenStorage.getToken(mcpToken);
 
       if (!tokenSession || tokenSession.expiresAt < Date.now()) {
-        console.error('  ✗ Invalid or expired MCP token');
+        console.error("  ✗ Invalid or expired MCP token");
         return res.status(401).json({
-          jsonrpc: '2.0',
+          jsonrpc: "2.0",
           id,
           error: {
             code: -32002,
-            message: 'Invalid or expired token. Please re-authenticate.',
+            message: "Invalid or expired token. Please re-authenticate.",
           },
         });
       }
@@ -755,46 +981,75 @@ const main = async () => {
       const qbSession = qbSessionStorage.getSession(tokenSession.sessionId);
 
       if (!qbSession) {
-        console.error(`  ✗ QuickBooks session not found: ${tokenSession.sessionId}`);
+        console.error(
+          `  ✗ QuickBooks session not found: ${tokenSession.sessionId}`
+        );
         return res.status(403).json({
-          jsonrpc: '2.0',
+          jsonrpc: "2.0",
           id,
           error: {
             code: -32003,
-            message: 'QuickBooks session not found. Please re-authenticate.',
+            message: "QuickBooks session not found. Please re-authenticate.",
           },
         });
       }
 
-      console.log(`  ✓ QuickBooks session found → realmId: ${qbSession.realmId}`);
+      console.log(
+        `  ✓ QuickBooks session found → realmId: ${qbSession.realmId}`
+      );
 
-      // Auto-refresh QuickBooks tokens if needed (< 5 min remaining)
-      const tokenRefreshService = getTokenRefreshService(quickbooksClient);
-      await tokenRefreshService.refreshQuickBooksTokenIfNeeded(tokenSession.sessionId);
+      // Auto-refresh QuickBooks tokens if needed (< 5 min remaining OR already expired)
+      try {
+        const tokenRefreshService = getTokenRefreshService(quickbooksClient);
+        const wasRefreshed = await tokenRefreshService.refreshQuickBooksTokenIfNeeded(
+          tokenSession.sessionId
+        );
+        if (wasRefreshed) {
+          console.log("  ✓ QuickBooks tokens refreshed successfully");
+        }
+      } catch (refreshError: any) {
+        console.error("  ✗ Failed to refresh QuickBooks tokens:", refreshError.message);
+        console.error("  → User needs to re-authenticate");
+
+        // Return auth error that Claude will understand
+        return res.status(401).json({
+          jsonrpc: "2.0",
+          id,
+          error: {
+            code: -32001,
+            message: "QuickBooks authentication expired. Please disconnect and reconnect the integration in Claude Desktop."
+          },
+        });
+      }
 
       // Reload session after potential refresh
-      const refreshedSession = qbSessionStorage.getSession(tokenSession.sessionId);
+      const refreshedSession = qbSessionStorage.getSession(
+        tokenSession.sessionId
+      );
       if (!refreshedSession) {
-        console.error('  ✗ Session lost after refresh');
+        console.error("  ✗ Session lost after refresh");
         return res.status(500).json({
-          jsonrpc: '2.0',
+          jsonrpc: "2.0",
           id,
-          error: { code: -32004, message: 'Session error' },
+          error: { code: -32004, message: "Session error" },
         });
       }
 
       // Set QuickBooks credentials for this request
-      console.log('  → Configuring QuickBooks client with session credentials');
-      quickbooksClient.setExternalAuth(refreshedSession.qbAccessToken, refreshedSession.realmId);
-      console.log('  ✓ QuickBooks client configured - ready for API calls!');
+      console.log("  → Configuring QuickBooks client with session credentials");
+      quickbooksClient.setExternalAuth(
+        refreshedSession.qbAccessToken,
+        refreshedSession.realmId
+      );
+      console.log("  ✓ QuickBooks client configured - ready for API calls!");
 
-      if (jsonrpc !== '2.0') {
+      if (jsonrpc !== "2.0") {
         return res.status(400).json({
-          jsonrpc: '2.0',
+          jsonrpc: "2.0",
           id,
           error: {
             code: -32600,
-            message: 'Invalid JSON-RPC version',
+            message: "Invalid JSON-RPC version",
           },
         });
       }
@@ -804,44 +1059,50 @@ const main = async () => {
 
       // Send JSON-RPC response
       res.json({
-        jsonrpc: '2.0',
+        jsonrpc: "2.0",
         id,
         result,
       });
     } catch (error: any) {
       // Enhanced error logging
-      console.error('Error handling MCP request:', {
-        error: error.message || 'Unknown error',
+      console.error("Error handling MCP request:", {
+        error: error.message || "Unknown error",
         method: req.body?.method,
         timestamp: new Date().toISOString(),
         stack: error.stack,
       });
 
       // Special handling for missing realm ID (should not happen with Claude Desktop OAuth)
-      if (error.message === 'REALM_ID_REQUIRED') {
+      if (error.message === "REALM_ID_REQUIRED") {
         console.log(`  → Realm ID missing - user needs to re-authenticate`);
 
         return res.json({
-          jsonrpc: '2.0',
+          jsonrpc: "2.0",
           id: req.body.id,
           error: {
             code: -32603,
-            message: 'QuickBooks authentication required. Please re-authenticate with Claude Desktop.',
+            message:
+              "QuickBooks authentication required. Please re-authenticate with Claude Desktop.",
           },
         });
       }
 
       // Default error handling
       res.json({
-        jsonrpc: '2.0',
+        jsonrpc: "2.0",
         id: req.body.id,
         error: {
           code: -32603,
-          message: error.message || 'Internal error',
+          message: error.message || "Internal error",
         },
       });
     }
-  });
+  };
+
+  // Register MCP handler for both root and /mcp paths
+  // (Claude Desktop update changed to call root /)
+  app.post("/", mcpLimiter, mcpHandler);
+  app.post("/mcp", mcpLimiter, mcpHandler);
 
   // Start HTTP server
   app.listen(config.port, () => {

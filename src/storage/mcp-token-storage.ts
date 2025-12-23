@@ -4,13 +4,12 @@
  * Stores MCP tokens issued to Claude Desktop after OAuth completion.
  * Tokens link to QuickBooks sessions which contain realmId and QB tokens.
  *
- * Storage: Persistent file-based with in-memory cache
+ * Storage: Persistent S3/file-based with in-memory cache
  * Purpose: Authenticate all /mcp requests from Claude Desktop
  * Expiration: 1 hour (3600 seconds)
  */
 
-import fs from 'fs/promises';
-import path from 'path';
+import { getS3StorageAdapter } from './s3-storage-adapter.js';
 
 export interface MCPTokenSession {
   /** Session ID that links to QuickBooks session */
@@ -24,6 +23,12 @@ export interface MCPTokenSession {
 
   /** Expiration timestamp (issuedAt + 1 hour) */
   expiresAt: number;
+
+  /** Refresh token for renewing access without re-authentication */
+  refreshToken?: string;
+
+  /** Refresh token expiration (7 days) */
+  refreshTokenExpiresAt?: number;
 }
 
 class MCPTokenStorage {
@@ -37,19 +42,18 @@ class MCPTokenStorage {
   }
 
   /**
-   * Initialize storage (load from disk)
+   * Initialize storage (load from S3 or disk)
    */
   async initialize(): Promise<void> {
     if (this.loaded) return;
 
     try {
-      // Ensure directory exists with secure permissions (owner-only read/write/execute)
-      const dir = path.dirname(this.filePath);
-      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+      const storageAdapter = getS3StorageAdapter();
 
       // Try to load existing data
-      try {
-        const data = await fs.readFile(this.filePath, 'utf-8');
+      const data = await storageAdapter.read(this.filePath);
+
+      if (data) {
         const parsed = JSON.parse(data);
 
         // Load tokens into memory
@@ -58,19 +62,15 @@ class MCPTokenStorage {
         }
 
         console.log(
-          `[MCP Token Storage] Loaded ${this.tokens.size} tokens from ${this.filePath}`
+          `[MCP Token Storage] Loaded ${this.tokens.size} tokens from ${storageAdapter.isS3() ? 'S3' : 'local file'}`
         );
 
         // Clean up expired tokens after loading
         this.cleanupExpired();
-      } catch (err: any) {
-        if (err.code === 'ENOENT') {
-          console.log(
-            `[MCP Token Storage] No existing file at ${this.filePath}, starting fresh`
-          );
-        } else {
-          throw err;
-        }
+      } else {
+        console.log(
+          `[MCP Token Storage] No existing data, starting fresh`
+        );
       }
 
       this.loaded = true;
@@ -87,15 +87,18 @@ class MCPTokenStorage {
    */
   async storeToken(
     token: string,
-    session: Omit<MCPTokenSession, 'issuedAt' | 'expiresAt'>
+    session: Omit<MCPTokenSession, 'issuedAt' | 'expiresAt' | 'refreshTokenExpiresAt'>
   ): Promise<void> {
     await this.ensureLoaded();
 
     const now = Date.now();
+    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000; // 7 days for refresh token
+
     this.tokens.set(token, {
       ...session,
       issuedAt: now,
-      expiresAt: now + 3600000, // 1 hour
+      expiresAt: now + 3600000, // 1 hour for access token
+      refreshTokenExpiresAt: session.refreshToken ? now + SEVEN_DAYS : undefined,
     });
 
     console.log(
@@ -192,6 +195,25 @@ class MCPTokenStorage {
   }
 
   /**
+   * Get session by refresh token
+   * @param refreshToken Refresh token
+   * @returns MCPTokenSession and its access token if found
+   */
+  getSessionByRefreshToken(refreshToken: string): { accessToken: string; session: MCPTokenSession } | undefined {
+    for (const [token, session] of this.tokens.entries()) {
+      if (session.refreshToken === refreshToken) {
+        // Check if refresh token is expired
+        if (session.refreshTokenExpiresAt && Date.now() > session.refreshTokenExpiresAt) {
+          console.warn(`[MCP Token Storage] Refresh token expired`);
+          return undefined;
+        }
+        return { accessToken: token, session };
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Get number of stored tokens
    */
   size(): number {
@@ -280,6 +302,8 @@ class MCPTokenStorage {
    */
   private async save(): Promise<void> {
     try {
+      const storageAdapter = getS3StorageAdapter();
+
       // Clean up expired before saving
       this.cleanupExpired();
 
@@ -289,11 +313,11 @@ class MCPTokenStorage {
         data[token] = session;
       }
 
-      // Write to file
-      await fs.writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
+      // Write to S3 or file
+      await storageAdapter.write(this.filePath, JSON.stringify(data, null, 2));
 
       console.log(
-        `[MCP Token Storage] Saved ${this.tokens.size} tokens to ${this.filePath}`
+        `[MCP Token Storage] Saved ${this.tokens.size} tokens to ${storageAdapter.isS3() ? 'S3' : 'local file'}`
       );
     } catch (error) {
       console.error('[MCP Token Storage] Failed to save:', error);

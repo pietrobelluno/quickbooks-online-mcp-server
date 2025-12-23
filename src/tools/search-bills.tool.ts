@@ -92,10 +92,10 @@ export const SearchBillsTool: ToolDefinition<typeof toolSchema> = {
     }
     return {
       content: [
-        { type: "text" as const, text: Array.isArray(response.result) ? `Found ${response.result.length} bills:` : `Count: ${response.result}` },
+        { type: "text" as const, text: Array.isArray(response.result) ? `Found ${response.result.length} bills:` : `Query result:` },
         ...(Array.isArray(response.result)
           ? response.result.map((b) => ({ type: "text" as const, text: JSON.stringify(b) }))
-          : []),
+          : [{ type: "text" as const, text: JSON.stringify(response.result, null, 2) }]),
       ],
     };
   },

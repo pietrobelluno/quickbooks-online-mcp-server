@@ -48,6 +48,18 @@ const FIELD_TYPE_MAP = {
 // Helper function to check if the value type matches the expected type for the field
 const isValidInvoiceValueType = (field: string, value: any): boolean => {
   const expectedType = FIELD_TYPE_MAP[field as keyof typeof FIELD_TYPE_MAP];
+
+  // Handle date fields - accept string values in date format
+  if (expectedType === 'date') {
+    return typeof value === 'string';
+  }
+
+  // Handle number fields - accept both number and numeric strings
+  if (expectedType === 'number') {
+    return typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)));
+  }
+
+  // Handle string fields
   return typeof value === expectedType;
 };
 
@@ -102,17 +114,19 @@ const toolSchema = z.object({ criteria: z.any() });
 const toolHandler = async ({ params }: any) => {
   const { criteria } = params;
 
-  // Validate runtime schema
-  const parsed = RUNTIME_CRITERIA_SCHEMA.safeParse(criteria);
-  if (!parsed.success) {
-    return {
-      content: [
-        { type: "text" as const, text: `Invalid criteria: ${parsed.error.message}` },
-      ],
-    };
+  // Parse criteria if it's a JSON string (Claude Desktop sometimes sends it as string)
+  let parsedCriteria = criteria;
+  if (typeof criteria === 'string') {
+    try {
+      parsedCriteria = JSON.parse(criteria);
+    } catch (e) {
+      // If parsing fails, use as-is
+    }
   }
 
-  const response = await searchQuickbooksInvoices(criteria);
+  // Skip validation - let node-quickbooks handle it like query_data does
+  // The strict validation was causing issues with valid queries
+  const response = await searchQuickbooksInvoices(parsedCriteria);
 
   if (response.isError) {
     return {

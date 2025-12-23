@@ -46,11 +46,70 @@ export async function handleTokenEndpoint(req: Request, res: Response): Promise<
     console.log(`  → redirect_uri: ${redirect_uri || '(not provided)'}`);
 
     // Validate grant_type
-    if (!grant_type || grant_type !== 'authorization_code') {
+    if (!grant_type) {
+      console.error(`  ✗ Missing grant_type`);
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'Missing required parameter: grant_type',
+      });
+    }
+
+    if (grant_type !== 'authorization_code' && grant_type !== 'refresh_token') {
       console.error(`  ✗ Invalid grant_type: ${grant_type}`);
       return res.status(400).json({
         error: 'unsupported_grant_type',
-        error_description: 'grant_type must be "authorization_code"',
+        error_description: 'grant_type must be "authorization_code" or "refresh_token"',
+      });
+    }
+
+    // Handle refresh_token grant type
+    if (grant_type === 'refresh_token') {
+      console.log('  ✓ Handling refresh_token grant');
+      const { refresh_token } = req.body;
+
+      if (!refresh_token) {
+        console.error('  ✗ Missing refresh_token');
+        return res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'Missing required parameter: refresh_token',
+        });
+      }
+
+      // Get MCP token storage
+      const { getMCPTokenStorage } = await import('../storage/mcp-token-storage.js');
+      const { generateMCPToken } = await import('../utils/token-generator.js');
+
+      const mcpTokenStorage = getMCPTokenStorage();
+      await mcpTokenStorage.initialize();
+
+      // Find session by refresh token
+      const result = mcpTokenStorage.getSessionByRefreshToken(refresh_token);
+
+      if (!result) {
+        console.error('  ✗ Invalid or expired refresh token');
+        return res.status(401).json({
+          error: 'invalid_grant',
+          error_description: 'Invalid or expired refresh token',
+        });
+      }
+
+      console.log(`  ✓ Valid refresh token for session: ${result.session.sessionId}`);
+
+      // Generate new access token (keep same refresh token)
+      const newAccessToken = generateMCPToken();
+      await mcpTokenStorage.storeToken(newAccessToken, {
+        sessionId: result.session.sessionId,
+        refreshToken: refresh_token, // Reuse same refresh token
+      });
+
+      console.log('  ✓ Generated new access token');
+      console.log(`  ✓ Token refresh successful for session: ${result.session.sessionId}`);
+
+      return res.json({
+        access_token: newAccessToken,
+        token_type: 'Bearer',
+        expires_in: 3600, // 1 hour
+        refresh_token: refresh_token, // Return same refresh token
       });
     }
 
@@ -150,26 +209,30 @@ export async function handleTokenEndpoint(req: Request, res: Response): Promise<
     // Clean up PKCE challenge (no longer needed)
     pkceStorage.deletePKCE(authCode.claudeState);
 
-    // Generate MCP access token
+    // Generate MCP access token and refresh token
     const mcpToken = generateMCPToken();
+    const refreshToken = generateMCPToken(); // Generate refresh token (7-day expiry)
     console.log(`  ✓ Generated MCP token for session: ${mcpToken ? "yes" : "no"}`);
+    console.log(`  ✓ Generated refresh token (7-day expiry)`);
 
-    // Store MCP token linked to QuickBooks session
+    // Store MCP token linked to QuickBooks session with refresh token
     const mcpTokenStorage = getMCPTokenStorage();
     await mcpTokenStorage.initialize(); // Ensure storage is initialized
     await mcpTokenStorage.storeToken(mcpToken, {
       sessionId: authCode.sessionId,
+      refreshToken: refreshToken,
     });
 
     console.log(
       `  ✓ Stored MCP token → session: ${authCode.sessionId} → QB session (with realmId!)`
     );
 
-    // Return token response (OAuth 2.0 standard format)
+    // Return token response (OAuth 2.0 standard format with refresh token)
     const tokenResponse = {
       access_token: mcpToken,
       token_type: 'Bearer',
       expires_in: 3600, // 1 hour
+      refresh_token: refreshToken, // For token renewal without re-authentication
     };
 
     console.log('  ✓ Token exchange successful');

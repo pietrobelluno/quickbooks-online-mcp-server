@@ -74,6 +74,21 @@ export async function handleAuthorizeEndpoint(
 
     if (validationError) {
       console.error(`  ✗ Validation error: ${validationError}`);
+
+      // If no parameters at all, return OAuth metadata (Claude Desktop discovery)
+      if (!response_type && !client_id && !redirect_uri && !code_challenge && !state) {
+        console.log('  → Returning OAuth metadata for Claude Desktop discovery');
+        const baseUrl = `https://${req.get('host')}`;
+        return res.json({
+          authorization_endpoint: `${baseUrl}/authorize`,
+          token_endpoint: `${baseUrl}/token`,
+          response_types_supported: ['code'],
+          grant_types_supported: ['authorization_code', 'refresh_token'],
+          code_challenge_methods_supported: ['S256'],
+          token_endpoint_auth_methods_supported: ['none']
+        });
+      }
+
       return res.status(400).send(`
         <html>
           <body style="font-family: Arial; padding: 40px; text-align: center;">
@@ -127,6 +142,82 @@ export async function handleAuthorizeEndpoint(
     });
 
     console.log(`  ✓ Stored PKCE challenge for state: ${String(state).substring(0, 20)}...`);
+
+    // ========== SINGLE-COMPANY SHARED CONNECTION ==========
+    // Check if we already have a company connection (skip QB OAuth if yes)
+    const { getQuickBooksSessionStorage } = await import('../storage/quickbooks-session-storage.js');
+    const { generateAuthCode } = await import('../utils/token-generator.js');
+    const { getAuthCodeStorage } = await import('../storage/auth-code-storage.js');
+
+    const qbSessionStorage = getQuickBooksSessionStorage();
+    await qbSessionStorage.initialize();
+
+    // Get all existing sessions to check if any company is connected
+    const allRealmIds = qbSessionStorage.getAllRealmIds();
+
+    if (allRealmIds.length > 0) {
+      // Check if we have an existing company connection
+      const existingRealmId = allRealmIds[0]; // Use the first (and only) company connection
+      const existingConnection = qbSessionStorage.getSessionByRealmId(existingRealmId);
+
+      // Check if tokens are still valid (not expired)
+      // Require at least 30 minutes validity to avoid expiring during use
+      const isTokenValid = existingConnection &&
+        existingConnection.session.qbTokenExpiresAt > Date.now() + (30 * 60 * 1000); // Valid for at least 30 more minutes
+
+      if (existingConnection && isTokenValid) {
+        // ✅ Company already connected with VALID tokens! Skip QuickBooks OAuth
+        console.log(`  ✓ Found existing company connection (realmId: ${existingRealmId})`);
+        console.log(`  ✓ Tokens valid - skipping QuickBooks OAuth`);
+
+        // Generate session ID for this user
+        const sessionId = generateSessionId();
+        console.log(`  ✓ Generated session ID: ${sessionId}`);
+        // Link this user's session to the existing company tokens
+        await qbSessionStorage.storeSession(sessionId, {
+          qbAccessToken: existingConnection.session.qbAccessToken,
+          qbRefreshToken: existingConnection.session.qbRefreshToken,
+          qbTokenExpiresAt: existingConnection.session.qbTokenExpiresAt,
+          realmId: existingRealmId,
+          createdAt: Date.now(),
+        });
+
+        console.log(`  ✓ Linked new user session to existing company connection`);
+
+        // Generate MCP authorization code
+        const mcpAuthCode = generateAuthCode();
+        console.log(`  ✓ Generated MCP auth code: ${mcpAuthCode.substring(0, 16)}...`);
+
+        // Store authorization code
+        const authCodeStorage = getAuthCodeStorage();
+        authCodeStorage.storeAuthCode(mcpAuthCode, {
+          sessionId,
+          claudeState: state as string,
+        });
+
+        console.log(`  ✓ Stored authorization code`);
+
+        // Build Claude callback URL
+        const claudeCallbackUrl = `${redirect_uri}?code=${mcpAuthCode}&state=${state}`;
+
+        console.log(`  ✓ Redirecting to Claude: ${claudeCallbackUrl.substring(0, 80)}...`);
+        console.log(`  → User automatically connected without QuickBooks OAuth!`);
+
+        // Redirect back to Claude Desktop
+        return res.redirect(claudeCallbackUrl);
+      } else if (existingConnection) {
+        // Connection exists but tokens expired - clean up and re-authorize
+        console.log(`  ⚠ Existing connection found but tokens expired`);
+        console.log(`  → Clearing expired session and re-authorizing`);
+        await qbSessionStorage.deleteSession(existingConnection.sessionId);
+      }
+    }
+
+    // No existing connection OR tokens expired - proceed with QuickBooks OAuth
+    if (allRealmIds.length === 0) {
+      console.log(`  → No existing company connection found`);
+    }
+    console.log(`  → Proceeding with QuickBooks OAuth`);
 
     // Generate session ID
     const sessionId = generateSessionId();

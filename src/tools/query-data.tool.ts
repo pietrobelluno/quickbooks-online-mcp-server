@@ -26,6 +26,11 @@ CRITERIA FORMAT OPTIONS:
      fetchAll: false
    }
 
+4. Using pagination:
+   Use limit and offset in the criteria object:
+   - limit: Maximum records to return (max 1000, default 100)
+   - offset: Number of records to skip (0-based)
+
 SUPPORTED OPERATORS:
 = (equals), IN (in list), < (less than), > (greater than), <= (less than or equal), >= (greater than or equal), LIKE (pattern match with % wildcard)
 
@@ -78,6 +83,21 @@ Example 6 - Find past due invoices:
     {field: 'DueDate', value: '2025-12-15', operator: '<'}
   ]
 
+Example 7 - Get top 10 active customers:
+  entity: "Customer"
+  criteria: {
+    filters: [{field: 'Active', value: true}],
+    desc: 'MetaData.CreateTime',
+    limit: 10
+  }
+
+Example 8 - Pagination - get next 10 customers:
+  entity: "Customer"
+  criteria: {
+    limit: 10,
+    offset: 10
+  }
+
 NOTES:
 - Date fields should be in 'YYYY-MM-DD' format
 - LIKE operator uses % as wildcard (e.g., '%@gmail.com' finds emails ending with @gmail.com)
@@ -88,13 +108,23 @@ NOTES:
 
 const toolSchema = z.object({
   entity: z.string().describe("The QuickBooks entity type to query (e.g., Invoice, Customer, Vendor, Bill)"),
-  criteria: z.any().optional().describe("Optional search criteria with filters, sorting, and pagination")
+  criteria: z.any().optional().describe("Optional search criteria with filters, sorting, and pagination (limit/offset)")
 });
 
 const toolHandler = async ({ params }: any) => {
   const { entity, criteria } = params;
 
-  const response = await queryQuickbooksData({ entity, criteria });
+  // Parse criteria if it's a JSON string (Claude Desktop sometimes sends it as string)
+  let parsedCriteria = criteria;
+  if (typeof criteria === 'string') {
+    try {
+      parsedCriteria = JSON.parse(criteria);
+    } catch (e) {
+      // If parsing fails, use as-is
+    }
+  }
+
+  const response = await queryQuickbooksData({ entity, criteria: parsedCriteria });
 
   if (response.isError) {
     return {
@@ -105,6 +135,19 @@ const toolHandler = async ({ params }: any) => {
   }
 
   const results = response.result;
+
+  // Handle count queries or metadata responses
+  if (results && typeof results === 'object' && !Array.isArray(results)) {
+    // If it's a count response or has metadata, show it properly
+    return {
+      content: [
+        { type: "text" as const, text: `Query result for ${entity}:` },
+        { type: "text" as const, text: JSON.stringify(results, null, 2) },
+      ],
+    };
+  }
+
+  // Normal array response
   return {
     content: [
       { type: "text" as const, text: `Found ${results?.length || 0} ${entity} record(s)` },

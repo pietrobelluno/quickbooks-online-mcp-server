@@ -42,7 +42,8 @@ const REPORT_TYPE_MAP: Record<string, string> = {
   // Accounting Reports
   'TaxSummary': 'reportTaxSummary',
   'AccountListDetail': 'reportAccountListDetail',
-  'JournalReport': 'reportJournalReport'
+  'JournalReport': 'reportJournalReport',
+  'TrialBalanceFR': 'reportTrialBalanceFR'
 };
 
 // List of valid report types for validation

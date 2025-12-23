@@ -20,12 +20,13 @@
         "start:stdio": "node dist/src/index.js"
     },
     "dependencies": {
+        "@aws-sdk/client-s3": "^3.953.0",
         "@modelcontextprotocol/sdk": "^1.6.0",
         "@types/express": "^5.0.5",
         "dotenv": "^16.4.7",
         "express": "^5.1.0",
         "express-rate-limit": "^8.2.1",
-        "intuit-oauth": "^4.0.0",
+        "intuit-oauth": "^4.2.2",
         "node-quickbooks": "^2.0.43",
         "open": "^9.1.0",
         "zod": "^3.24.2",

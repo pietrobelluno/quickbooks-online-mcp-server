@@ -4,9 +4,9 @@ import { z } from "zod";
 
 const toolName = "query_reports";
 
-const toolDescription = `Generate QuickBooks reports with customizable parameters. Reports provide aggregated financial and operational data across 28 report types.
+const toolDescription = `Generate QuickBooks reports with customizable parameters. Reports provide aggregated financial and operational data across 29 report types.
 
-AVAILABLE REPORT TYPES (28 types):
+AVAILABLE REPORT TYPES (29 types):
 
 FINANCIAL REPORTS:
 - BalanceSheet: Balance sheet showing assets, liabilities, and equity
@@ -50,13 +50,16 @@ ACCOUNTING REPORTS:
 
 COMMON REPORT OPTIONS:
 
-Date Range Parameters:
-- start_date: 'YYYY-MM-DD' (required for most reports)
-- end_date: 'YYYY-MM-DD' (required for most reports)
-- date_macro: Predefined periods instead of explicit dates
-  Values: 'Today', 'Yesterday', 'This Week', 'Last Week', 'This Month', 'Last Month',
-          'This Quarter', 'Last Quarter', 'This Year', 'Last Year',
-          'This Fiscal Quarter', 'Last Fiscal Quarter', 'This Fiscal Year', 'Last Fiscal Year'
+Date Range Parameters (REQUIRED):
+- start_date: 'YYYY-MM-DD' (REQUIRED - must be in YYYY-MM-DD format, e.g., '2025-01-01')
+- end_date: 'YYYY-MM-DD' (REQUIRED - must be in YYYY-MM-DD format, e.g., '2025-12-31')
+
+⚠️ IMPORTANT: Do NOT use 'date_macro' - it is NOT supported by QuickBooks API.
+    Always calculate specific start_date and end_date based on the requested period:
+    - "This Year": Use January 1 to December 31 of current year
+    - "Last Month": Use first and last day of previous month
+    - "This Quarter": Use first and last day of current quarter
+    - "Today": Use today's date for both start_date and end_date
 
 Filter Parameters:
 - accounting_method: 'Cash' or 'Accrual'
@@ -84,13 +87,15 @@ Example 1 - Profit and loss for Q4 2024:
 Example 2 - Balance sheet as of today:
   reportType: "BalanceSheet"
   options: {
-    date_macro: 'Today'
+    start_date: '2025-12-20',
+    end_date: '2025-12-20'
   }
 
 Example 3 - Aged receivables (AR aging):
   reportType: "AgedReceivableDetail"
   options: {
-    date_macro: 'Today'
+    start_date: '2025-12-20',
+    end_date: '2025-12-20'
   }
 
 Example 4 - Transaction list for December 2024:
@@ -103,7 +108,8 @@ Example 4 - Transaction list for December 2024:
 Example 5 - Customer sales for last quarter:
   reportType: "CustomerSales"
   options: {
-    date_macro: 'Last Quarter'
+    start_date: '2024-10-01',
+    end_date: '2024-12-31'
   }
 
 Example 6 - Sales by item for 2024:
@@ -117,15 +123,30 @@ Example 6 - Sales by item for 2024:
 Example 7 - Vendor expenses this year:
   reportType: "VendorExpenses"
   options: {
-    date_macro: 'This Year',
+    start_date: '2025-01-01',
+    end_date: '2025-12-31',
     accounting_method: 'Cash'
   }
 
 Example 8 - Cash flow statement YTD:
   reportType: "CashFlow"
   options: {
-    date_macro: 'This Fiscal Year-to-date'
+    start_date: '2025-01-01',
+    end_date: '2025-12-20'
   }
+
+Example 9 - Profit and loss with row limiting:
+  reportType: "ProfitAndLoss"
+  options: {
+    start_date: '2024-11-01',
+    end_date: '2024-11-30'
+  }
+  max_rows: 20
+
+Example 10 - Balance sheet with specific columns:
+  reportType: "BalanceSheet"
+  options: { date_macro: 'Today' }
+  columns: ['Account', 'Total']
 
 NOTES:
 - Most reports require either start_date/end_date OR date_macro
@@ -134,17 +155,38 @@ NOTES:
 - Accounting method defaults to company preferences if not specified
 - Report data structure varies by report type - returns raw QuickBooks report format
 - For aged reports (AR/AP aging), use date_macro: 'Today' to get current aging
+- Use max_rows parameter to limit report size (reduces response data)
+- Use columns parameter to filter specific columns (e.g., ['Account', 'Total'])
 `;
 
 const toolSchema = z.object({
   reportType: z.string().describe("The type of QuickBooks report to generate (e.g., ProfitAndLoss, BalanceSheet, AgedReceivables)"),
-  options: z.any().optional().describe("Optional report parameters like date ranges, filters, and formatting options")
+  options: z.any().optional().describe("Optional report parameters like date ranges, filters, and formatting options"),
+  max_rows: z.number().optional().describe(
+    "Maximum number of rows to return from the report. " +
+    "Filters client-side after fetching from QuickBooks to limit response size."
+  ),
+  columns: z.array(z.string()).optional().describe(
+    "Optional array of column names to include in response. " +
+    "Filters client-side after fetching from QuickBooks. " +
+    "Common column names vary by report type (e.g., 'Account', 'Total', 'Amount', 'Balance')."
+  )
 });
 
 const toolHandler = async ({ params }: any) => {
-  const { reportType, options } = params;
+  const { reportType, options, max_rows, columns } = params;
 
-  const response = await queryQuickbooksReports({ reportType, options });
+  // Parse options if it's a JSON string (Claude Desktop sometimes sends it as string)
+  let parsedOptions = options;
+  if (typeof options === 'string') {
+    try {
+      parsedOptions = JSON.parse(options);
+    } catch (e) {
+      // If parsing fails, use as-is
+    }
+  }
+
+  const response = await queryQuickbooksReports({ reportType, options: parsedOptions });
 
   if (response.isError) {
     return {
@@ -154,10 +196,60 @@ const toolHandler = async ({ params }: any) => {
     };
   }
 
-  const report = response.result;
+  let report = response.result;
+
+  // Apply client-side filtering if requested
+  let filterNote = '';
+
+  // Apply max_rows limit if specified
+  if (max_rows !== undefined && report?.Rows?.Row) {
+    const originalRowCount = report.Rows.Row.length;
+    report.Rows.Row = report.Rows.Row.slice(0, max_rows);
+    filterNote += `Rows limited to ${max_rows} (original: ${originalRowCount}). `;
+  }
+
+  // Apply column filtering if specified
+  if (columns && columns.length > 0 && report?.Columns?.Column) {
+    // Find column indices that match requested column names
+    const columnIndices: number[] = [];
+    const filteredColumns: any[] = [];
+
+    report.Columns.Column.forEach((col: any, index: number) => {
+      const colName = col.ColTitle || col.ColName || col.Name;
+      if (colName && columns.some((requestedCol: string) =>
+        colName.toLowerCase().includes(requestedCol.toLowerCase())
+      )) {
+        columnIndices.push(index);
+        filteredColumns.push(col);
+      }
+    });
+
+    if (filteredColumns.length > 0) {
+      report.Columns.Column = filteredColumns;
+
+      // Filter row data to only include selected columns
+      if (report?.Rows?.Row) {
+        report.Rows.Row = report.Rows.Row.map((row: any) => {
+          if (row.ColData) {
+            row.ColData = row.ColData.filter((_: any, index: number) =>
+              columnIndices.includes(index)
+            );
+          }
+          return row;
+        });
+      }
+
+      filterNote += `Columns filtered to: ${filteredColumns.map((c: any) => c.ColTitle || c.ColName || c.Name).join(', ')}. `;
+    }
+  }
+
+  const resultText = filterNote
+    ? `Generated ${reportType} report successfully. ${filterNote}`
+    : `Generated ${reportType} report successfully`;
+
   return {
     content: [
-      { type: "text" as const, text: `Generated ${reportType} report successfully` },
+      { type: "text" as const, text: resultText },
       { type: "text" as const, text: JSON.stringify(report, null, 2) },
     ],
   };

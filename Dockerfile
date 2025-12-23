@@ -12,8 +12,10 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 
 # Install dependencies (including dev dependencies for build)
-# This will trigger "prepare" script which runs "npm run build"
-RUN npm ci
+RUN npm ci --ignore-scripts
+
+# Run build manually (without chmod since it's not needed in Docker)
+RUN npx tsc
 
 # Stage 2: Production
 FROM node:20-alpine

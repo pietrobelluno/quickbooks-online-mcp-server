@@ -71,6 +71,11 @@ export async function queryQuickbooksData(input: QueryDataInput): Promise<ToolRe
     const quickbooks = quickbooksClient.getQuickbooks();
     const normalizedCriteria = buildQuickbooksSearchCriteria(criteria);
 
+    // DEBUG: Log what we're sending to node-quickbooks
+    console.log(`[query_data DEBUG] Entity: ${entity}`);
+    console.log(`[query_data DEBUG] Input criteria:`, JSON.stringify(criteria, null, 2));
+    console.log(`[query_data DEBUG] Normalized criteria:`, JSON.stringify(normalizedCriteria, null, 2));
+
     // Get the appropriate find method
     const methodName = ENTITY_TO_METHOD_MAP[entity];
 

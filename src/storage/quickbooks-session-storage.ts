@@ -9,13 +9,12 @@
  *
  * Answer: Everything is stored here server-side, linked by sessionId!
  *
- * Storage: Persistent file-based with in-memory cache
+ * Storage: Persistent S3/file-based with in-memory cache
  * Purpose: Store QB access token, refresh token, and realmId per session
  * Survives: Server restarts, device changes - works across all devices!
  */
 
-import fs from 'fs/promises';
-import path from 'path';
+import { getS3StorageAdapter } from './s3-storage-adapter.js';
 
 export interface QuickBooksSession {
   /** QuickBooks OAuth access token (1 hour expiry) */
@@ -51,19 +50,18 @@ class QuickBooksSessionStorage {
   }
 
   /**
-   * Initialize storage (load from disk)
+   * Initialize storage (load from S3 or disk)
    */
   async initialize(): Promise<void> {
     if (this.loaded) return;
 
     try {
-      // Ensure directory exists with secure permissions (owner-only read/write/execute)
-      const dir = path.dirname(this.filePath);
-      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+      const storageAdapter = getS3StorageAdapter();
 
       // Try to load existing data
-      try {
-        const data = await fs.readFile(this.filePath, 'utf-8');
+      const data = await storageAdapter.read(this.filePath);
+
+      if (data) {
         const parsed = JSON.parse(data);
 
         // Load sessions into memory
@@ -72,16 +70,12 @@ class QuickBooksSessionStorage {
         }
 
         console.log(
-          `[QB Session Storage] Loaded ${this.sessions.size} sessions from ${this.filePath}`
+          `[QB Session Storage] Loaded ${this.sessions.size} sessions from ${storageAdapter.isS3() ? 'S3' : 'local file'}`
         );
-      } catch (err: any) {
-        if (err.code === 'ENOENT') {
-          console.log(
-            `[QB Session Storage] No existing file at ${this.filePath}, starting fresh`
-          );
-        } else {
-          throw err;
-        }
+      } else {
+        console.log(
+          `[QB Session Storage] No existing data, starting fresh`
+        );
       }
 
       this.loaded = true;
@@ -209,6 +203,23 @@ class QuickBooksSessionStorage {
   }
 
   /**
+   * Get session by realm ID (for shared company connections)
+   * Returns the first session found for this company
+   * @param realmId QuickBooks realm ID
+   * @returns Session data if found, including sessionId
+   */
+  getSessionByRealmId(realmId: string): { sessionId: string; session: QuickBooksSession } | undefined {
+    for (const [sessionId, session] of this.sessions.entries()) {
+      if (session.realmId === realmId) {
+        // Update last used timestamp
+        session.lastUsedAt = Date.now();
+        return { sessionId, session };
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Get all sessions for a given user ID
    * @param userId User identifier
    * @returns Array of session IDs
@@ -280,6 +291,14 @@ class QuickBooksSessionStorage {
   }
 
   /**
+   * Get all sessions (for token refresh updates across shared connections)
+   * @returns Array of [sessionId, session] tuples
+   */
+  getAllSessions(): Array<[string, QuickBooksSession]> {
+    return Array.from(this.sessions.entries());
+  }
+
+  /**
    * Schedule save to disk (debounced to avoid frequent writes)
    */
   private scheduleSave(): void {
@@ -295,22 +314,24 @@ class QuickBooksSessionStorage {
   }
 
   /**
-   * Save sessions to disk
+   * Save sessions to S3 or disk
    * **THIS IS WHY MOBILE/DESKTOP BOTH WORK - DATA PERSISTS!**
    */
   private async save(): Promise<void> {
     try {
+      const storageAdapter = getS3StorageAdapter();
+
       // Convert Map to plain object
       const data: Record<string, QuickBooksSession> = {};
       for (const [sessionId, session] of this.sessions.entries()) {
         data[sessionId] = session;
       }
 
-      // Write to file
-      await fs.writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
+      // Write to S3 or file
+      await storageAdapter.write(this.filePath, JSON.stringify(data, null, 2));
 
       console.log(
-        `[QB Session Storage] Saved ${this.sessions.size} sessions to ${this.filePath}`
+        `[QB Session Storage] Saved ${this.sessions.size} sessions to ${storageAdapter.isS3() ? 'S3' : 'local file'}`
       );
     } catch (error) {
       console.error('[QB Session Storage] Failed to save:', error);

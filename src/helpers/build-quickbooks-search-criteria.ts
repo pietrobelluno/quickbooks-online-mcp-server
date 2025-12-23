@@ -14,9 +14,9 @@ export interface AdvancedQuickbooksSearchOptions {
   asc?: string;
   /** Sort descending by the provided field */
   desc?: string;
-  /** Maximum number of rows to return */
+  /** Maximum number of rows to return (max 1000, default 100) */
   limit?: number;
-  /** Number of rows to skip from the start of the result set */
+  /** Number of rows to skip from the start of the result set (0-based) */
   offset?: number;
   /** If true, only a count of rows is returned */
   count?: boolean;
@@ -50,24 +50,25 @@ export function buildQuickbooksSearchCriteria(
     return input as Array<Record<string, any>>;
   }
 
-  // If the input is a plain object that does NOT look like advanced options, forward as-is
-  const possibleAdvancedKeys: (keyof AdvancedQuickbooksSearchOptions)[] = [
+  // If the input is a plain object with ONLY simple options (asc, desc, limit, offset),
+  // pass it through as-is. node-quickbooks handles these better in object format.
+  //
+  // Only transform to array format if we have "filters" (complex queries) or special
+  // flags like "count" or "fetchAll" that require transformation.
+  const advancedOnlyKeys: (keyof AdvancedQuickbooksSearchOptions)[] = [
     "filters",
-    "asc",
-    "desc",
-    "limit",
-    "offset",
     "count",
     "fetchAll",
   ];
 
   const inputKeys = Object.keys(input || {});
-  const isAdvanced = inputKeys.some((k) =>
-    possibleAdvancedKeys.includes(k as keyof AdvancedQuickbooksSearchOptions)
+  const hasAdvancedKeys = inputKeys.some((k) =>
+    advancedOnlyKeys.includes(k as keyof AdvancedQuickbooksSearchOptions)
   );
 
-  if (!isAdvanced) {
-    // simple criteria object – pass through
+  if (!hasAdvancedKeys) {
+    // Simple criteria with just asc/desc/limit/offset – pass through as plain object
+    // This avoids over-transformation and lets node-quickbooks handle it naturally
     return input as Record<string, any>;
   }
 
@@ -77,7 +78,17 @@ export function buildQuickbooksSearchCriteria(
 
   // Convert filters
   options.filters?.forEach((f) => {
-    criteriaArr.push({ field: f.field, value: f.value, operator: f.operator });
+    let processedValue = f.value;
+
+    // Let node-quickbooks handle IN operator array conversion
+    // The library already converts arrays to proper SQL format (adds parentheses and quotes)
+    // If we pre-process here, we get double-wrapping: IN (('1','2','3')) instead of IN ('1','2','3')
+    if (f.operator?.toUpperCase() === 'IN' && Array.isArray(f.value)) {
+      // Pass array as-is - node-quickbooks will handle conversion
+      processedValue = f.value;
+    }
+
+    criteriaArr.push({ field: f.field, value: processedValue, operator: f.operator });
   });
 
   // Sorting
@@ -88,20 +99,28 @@ export function buildQuickbooksSearchCriteria(
     criteriaArr.push({ field: "desc", value: options.desc });
   }
 
-  // Pagination / meta
+  // Pagination / meta - Add as ARRAY ITEMS (node-quickbooks expects this format)
+  // node-quickbooks looks for {field: 'limit', value: X} in the array, NOT object properties
   if (typeof options.limit === "number") {
-    criteriaArr.push({ field: "limit", value: options.limit });
-  }
-  if (typeof options.offset === "number") {
-    criteriaArr.push({ field: "offset", value: options.offset });
-  }
-  if (options.count) {
-    criteriaArr.push({ field: "count", value: true });
-  }
-  if (options.fetchAll) {
-    criteriaArr.push({ field: "fetchAll", value: true });
+    criteriaArr.push({ field: 'limit', value: options.limit });
   }
 
-  // If nothing ended up in the array, return empty object so Quickbooks returns all items.
-  return criteriaArr.length > 0 ? criteriaArr : {};
+  if (typeof options.offset === "number") {
+    criteriaArr.push({ field: 'offset', value: options.offset });
+  }
+
+  if (options.count) {
+    criteriaArr.push({ field: 'count', value: true });
+  }
+  if (options.fetchAll) {
+    criteriaArr.push({ field: 'fetchAll', value: true });
+  }
+
+  // Return array or empty object
+  if (criteriaArr.length > 0) {
+    return criteriaArr;
+  }
+
+  // Empty criteria - return empty object so Quickbooks returns all items
+  return {};
 } 

@@ -17,7 +17,8 @@
 
 import { getQuickBooksSessionStorage, QuickBooksSession } from '../storage/quickbooks-session-storage.js';
 
-// Mutex to prevent concurrent refreshes for the same session
+// Mutex to prevent concurrent refreshes for the same REALM (company)
+// Key is realmId, not sessionId, because multiple sessions can share the same QB connection
 const refreshMutexes = new Map<string, Promise<void>>();
 
 /**
@@ -62,21 +63,28 @@ export class TokenRefreshService {
       `[Token Refresh] Token expires in ${Math.round(timeUntilExpiry / 1000)} seconds, refreshing...`
     );
 
-    // Use mutex to prevent concurrent refreshes
-    if (refreshMutexes.has(sessionId)) {
-      console.log(`[Token Refresh] Refresh already in progress for session ${sessionId}, waiting...`);
-      await refreshMutexes.get(sessionId);
-      return true;
+    // Use mutex based on realmId to prevent concurrent refreshes for the SAME COMPANY
+    // This is critical because multiple sessions can share the same QB refresh token
+    const realmId = qbSession.realmId;
+    if (refreshMutexes.has(realmId)) {
+      console.log(`[Token Refresh] Refresh already in progress for company ${realmId}, waiting...`);
+      await refreshMutexes.get(realmId);
+      // After waiting, re-check if tokens were updated by the other refresh
+      const updatedSession = qbSessionStorage.getSession(sessionId);
+      if (updatedSession && updatedSession.qbTokenExpiresAt > Date.now() + 300000) {
+        console.log(`[Token Refresh] Tokens already refreshed by another session, no action needed`);
+        return true;
+      }
     }
 
     const refreshPromise = this.refreshQuickBooksToken(sessionId);
-    refreshMutexes.set(sessionId, refreshPromise);
+    refreshMutexes.set(realmId, refreshPromise);
 
     try {
       await refreshPromise;
       return true;
     } finally {
-      refreshMutexes.delete(sessionId);
+      refreshMutexes.delete(realmId);
     }
   }
 
@@ -95,41 +103,96 @@ export class TokenRefreshService {
       throw new Error('QuickBooks session not found');
     }
 
+    const timeUntilExpiry = qbSession.qbTokenExpiresAt - Date.now();
+    const isAlreadyExpired = timeUntilExpiry <= 0;
+
     console.log(`[Token Refresh] Refreshing tokens for session: ${sessionId}`);
     console.log(`  → RealmId: ${qbSession.realmId}`);
+    console.log(`  → Token status: ${isAlreadyExpired ? 'EXPIRED' : 'expiring soon'}`);
+    console.log(`  → Time until expiry: ${Math.round(timeUntilExpiry / 1000)} seconds`);
     console.log(`  → Refreshing QB tokens...`);
 
     try {
-      // Use QuickBooks OAuth client to refresh token
+      // Use the SHARED OAuth client from quickbooksClient (like Intuit's implementation)
+      // This is critical - creating new OAuth clients each time may cause issues
       const oauthClient = this.quickbooksClient['oauthClient'];
 
-      // Set the refresh token on the OAuth client
-      oauthClient.setToken({
-        refresh_token: qbSession.qbRefreshToken,
-      });
+      if (!oauthClient) {
+        throw new Error('OAuth client not available from quickbooksClient');
+      }
 
-      // Refresh the token
-      const response = await oauthClient.refresh();
+      console.log(`  → Using shared OAuth client from quickbooksClient`);
+      console.log(`  → Refresh token (first 20 chars): ${qbSession.qbRefreshToken.substring(0, 20)}...`);
+      console.log(`  → Calling intuit-oauth refreshUsingToken()...`);
+
+      // Refresh the token using refreshUsingToken() method (like Intuit's implementation)
+      const response = await oauthClient.refreshUsingToken(qbSession.qbRefreshToken);
+
+      if (!response || !response.token) {
+        throw new Error('Invalid response from OAuth refresh');
+      }
 
       const newTokens = response.token;
 
+      if (!newTokens.access_token || !newTokens.refresh_token) {
+        throw new Error('Missing tokens in refresh response');
+      }
+
       console.log('  ✓ Successfully refreshed QuickBooks tokens');
-      console.log(`  → New access token received`);
-      console.log(`  → New refresh token received`);
+      console.log(`  → New access token received (${newTokens.access_token.substring(0, 20)}...)`);
+      console.log(`  → New refresh token received (${newTokens.refresh_token.substring(0, 20)}...)`);
       console.log(`  → Expires in: ${newTokens.expires_in} seconds`);
 
-      // Update session storage with new tokens
-      await qbSessionStorage.updateTokens(sessionId, {
+      // CRITICAL: Update ALL sessions for this company (realmId) with new tokens
+      // Multiple sessions can share the same QB connection, so they all need the new refresh token
+      const allSessions = qbSessionStorage.getAllSessions();
+      const sessionsForThisCompany = allSessions.filter(([_, s]) => s.realmId === qbSession.realmId);
+
+      console.log(`  → Updating ${sessionsForThisCompany.length} session(s) for company ${qbSession.realmId}`);
+
+      const tokenUpdate = {
         qbAccessToken: newTokens.access_token,
         qbRefreshToken: newTokens.refresh_token,
         qbTokenExpiresAt: Date.now() + (newTokens.expires_in * 1000),
-      });
+      };
 
-      console.log('  ✓ Updated session storage with new tokens');
+      for (const [sid, _] of sessionsForThisCompany) {
+        await qbSessionStorage.updateTokens(sid, tokenUpdate);
+        console.log(`    ✓ Updated session: ${sid.substring(0, 8)}...`);
+      }
+
+      console.log('  ✓ All sessions updated with new tokens');
       console.log('  → RealmId preserved: ' + qbSession.realmId);
-    } catch (error) {
-      console.error('[Token Refresh] Failed to refresh tokens:', error);
-      throw new Error('Failed to refresh QuickBooks tokens');
+    } catch (error: any) {
+      console.error('[Token Refresh] Failed to refresh tokens');
+      console.error(`  → Error type: ${error.constructor.name}`);
+      console.error(`  → Error message: ${error.message}`);
+
+      // Log additional details from intuit-oauth errors
+      if (error.intuit_tid) {
+        console.error(`  → Intuit TID: ${error.intuit_tid}`);
+      }
+      if (error.authResponse) {
+        console.error(`  → Auth response:`, JSON.stringify(error.authResponse, null, 2));
+      }
+      if (error.originalMessage) {
+        console.error(`  → Original message: ${error.originalMessage}`);
+      }
+
+      // Log the FULL error object to see all properties
+      console.error(`  → Full error object keys:`, Object.keys(error));
+      console.error(`  → Full error object:`, JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+
+      // Check for error_description and error properties (OAuth standard)
+      if (error.error) {
+        console.error(`  → OAuth error code: ${error.error}`);
+      }
+      if (error.error_description) {
+        console.error(`  → OAuth error description: ${error.error_description}`);
+      }
+
+      // Throw with more context
+      throw new Error(`Failed to refresh QuickBooks tokens: ${error.message}`);
     }
   }
 
