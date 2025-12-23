@@ -135,19 +135,6 @@ Example 8 - Cash flow statement YTD:
     end_date: '2025-12-20'
   }
 
-Example 9 - Profit and loss with row limiting:
-  reportType: "ProfitAndLoss"
-  options: {
-    start_date: '2024-11-01',
-    end_date: '2024-11-30'
-  }
-  max_rows: 20
-
-Example 10 - Balance sheet with specific columns:
-  reportType: "BalanceSheet"
-  options: { date_macro: 'Today' }
-  columns: ['Account', 'Total']
-
 NOTES:
 - Most reports require either start_date/end_date OR date_macro
 - Date format must be 'YYYY-MM-DD'
@@ -155,26 +142,15 @@ NOTES:
 - Accounting method defaults to company preferences if not specified
 - Report data structure varies by report type - returns raw QuickBooks report format
 - For aged reports (AR/AP aging), use date_macro: 'Today' to get current aging
-- Use max_rows parameter to limit report size (reduces response data)
-- Use columns parameter to filter specific columns (e.g., ['Account', 'Total'])
 `;
 
 const toolSchema = z.object({
   reportType: z.string().describe("The type of QuickBooks report to generate (e.g., ProfitAndLoss, BalanceSheet, AgedReceivables)"),
-  options: z.any().optional().describe("Optional report parameters like date ranges, filters, and formatting options"),
-  max_rows: z.number().optional().describe(
-    "Maximum number of rows to return from the report. " +
-    "Filters client-side after fetching from QuickBooks to limit response size."
-  ),
-  columns: z.array(z.string()).optional().describe(
-    "Optional array of column names to include in response. " +
-    "Filters client-side after fetching from QuickBooks. " +
-    "Common column names vary by report type (e.g., 'Account', 'Total', 'Amount', 'Balance')."
-  )
+  options: z.any().optional().describe("Optional report parameters like date ranges, filters, and formatting options")
 });
 
 const toolHandler = async ({ params }: any) => {
-  const { reportType, options, max_rows, columns } = params;
+  const { reportType, options } = params;
 
   // Parse options if it's a JSON string (Claude Desktop sometimes sends it as string)
   let parsedOptions = options;
@@ -196,60 +172,11 @@ const toolHandler = async ({ params }: any) => {
     };
   }
 
-  let report = response.result;
-
-  // Apply client-side filtering if requested
-  let filterNote = '';
-
-  // Apply max_rows limit if specified
-  if (max_rows !== undefined && report?.Rows?.Row) {
-    const originalRowCount = report.Rows.Row.length;
-    report.Rows.Row = report.Rows.Row.slice(0, max_rows);
-    filterNote += `Rows limited to ${max_rows} (original: ${originalRowCount}). `;
-  }
-
-  // Apply column filtering if specified
-  if (columns && columns.length > 0 && report?.Columns?.Column) {
-    // Find column indices that match requested column names
-    const columnIndices: number[] = [];
-    const filteredColumns: any[] = [];
-
-    report.Columns.Column.forEach((col: any, index: number) => {
-      const colName = col.ColTitle || col.ColName || col.Name;
-      if (colName && columns.some((requestedCol: string) =>
-        colName.toLowerCase().includes(requestedCol.toLowerCase())
-      )) {
-        columnIndices.push(index);
-        filteredColumns.push(col);
-      }
-    });
-
-    if (filteredColumns.length > 0) {
-      report.Columns.Column = filteredColumns;
-
-      // Filter row data to only include selected columns
-      if (report?.Rows?.Row) {
-        report.Rows.Row = report.Rows.Row.map((row: any) => {
-          if (row.ColData) {
-            row.ColData = row.ColData.filter((_: any, index: number) =>
-              columnIndices.includes(index)
-            );
-          }
-          return row;
-        });
-      }
-
-      filterNote += `Columns filtered to: ${filteredColumns.map((c: any) => c.ColTitle || c.ColName || c.Name).join(', ')}. `;
-    }
-  }
-
-  const resultText = filterNote
-    ? `Generated ${reportType} report successfully. ${filterNote}`
-    : `Generated ${reportType} report successfully`;
+  const report = response.result;
 
   return {
     content: [
-      { type: "text" as const, text: resultText },
+      { type: "text" as const, text: `Generated ${reportType} report successfully` },
       { type: "text" as const, text: JSON.stringify(report, null, 2) },
     ],
   };

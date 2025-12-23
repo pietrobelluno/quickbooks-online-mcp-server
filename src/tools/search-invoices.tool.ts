@@ -124,7 +124,7 @@ const toolHandler = async ({ params }: any) => {
     }
   }
 
-  // Skip validation - let node-quickbooks handle it like query_data does
+  // Skip validation - let node-quickbooks handle it
   // The strict validation was causing issues with valid queries
   const response = await searchQuickbooksInvoices(parsedCriteria);
 

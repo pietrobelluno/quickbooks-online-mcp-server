@@ -45,7 +45,6 @@ import { GetJournalEntryTool } from "./tools/get-journal-entry.tool.js";
 import { SearchAccountsTool } from "./tools/search-accounts.tool.js";
 
 // Query tools (flexible querying)
-import { QueryDataTool } from "./tools/query-data.tool.js";
 import { QueryReportsTool } from "./tools/query-reports.tool.js";
 
 // Import destructive tools (Create/Update/Delete for all entities)
@@ -185,9 +184,8 @@ const main = async () => {
 
   // Register all tools in both MCP server and HTTP registry
   const tools = [
-    // Read-only tools (23 tools = 21 + 2 query tools)
-    // Query tools (2 powerful tools for flexible querying)
-    QueryDataTool,
+    // Read-only tools (22 tools = 21 + 1 query tool)
+    // Query tool (flexible report generation)
     QueryReportsTool,
 
     // Core Business (8 tools)
