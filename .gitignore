@@ -3,3 +3,24 @@
 
 node_modules
 dist
+
+# Environment variables (NEVER commit these!)
+.env
+.env.*
+!.env.example
+
+# Secrets and credentials
+*.pem
+*.key
+*.cert
+credentials.json
+secrets.json
+
+# Local data
+data/
+*.sqlite
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db
