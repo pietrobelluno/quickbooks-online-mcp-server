@@ -153,6 +153,7 @@ export async function handleAuthorizeEndpoint(
 
     const qbSessionStorage = getQuickBooksSessionStorage();
     await qbSessionStorage.initialize();
+    console.log(`  → QB Session Storage initialized (${qbSessionStorage.size()} sessions loaded from S3)`);
 
     // Acquire mutex lock to prevent simultaneous OAuth attempts
     const release = await sessionLockManager.acquireLock('qb-company-auth');

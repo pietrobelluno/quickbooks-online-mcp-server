@@ -541,8 +541,10 @@ const main = async () => {
 
       // ========== SHARED CONNECTION LOGIC ==========
       // Check if this company (realmId) already has an OAuth connection
+      console.log(`  → Checking for existing company connection (realmId: ${realmId})...`);
       const qbSessionStorage = getQuickBooksSessionStorage();
       await qbSessionStorage.initialize();
+      console.log(`  → QB Session Storage initialized (${qbSessionStorage.size()} sessions loaded)`);
       const existingConnection = qbSessionStorage.getSessionByRealmId(realmId);
 
       // Check if tokens are valid (not expired or about to expire soon)

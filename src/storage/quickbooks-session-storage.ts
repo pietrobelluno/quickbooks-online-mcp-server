@@ -117,8 +117,16 @@ class QuickBooksSessionStorage {
       `  ✓ Token expires: ${new Date(session.qbTokenExpiresAt).toISOString()}`
     );
 
-    // Schedule save (debounced)
-    this.scheduleSave();
+    // CRITICAL: Save immediately to S3 (don't debounce for session creation)
+    // This ensures sessions persist even if container restarts
+    console.log(`  → Saving session to S3 immediately...`);
+    try {
+      await this.save();
+      console.log(`  ✅ Session persisted to S3 successfully`);
+    } catch (error) {
+      console.error(`  ✗✗✗ CRITICAL: Failed to save session to S3:`, error);
+      throw error; // Re-throw to fail the OAuth flow if persistence fails
+    }
   }
 
   /**
@@ -174,7 +182,15 @@ class QuickBooksSessionStorage {
       `  ✓ New token expires: ${new Date(tokens.qbTokenExpiresAt).toISOString()}`
     );
 
-    this.scheduleSave();
+    // Save immediately to ensure token updates persist
+    console.log(`  → Saving updated tokens to S3...`);
+    try {
+      await this.save();
+      console.log(`  ✅ Updated tokens persisted to S3 successfully`);
+    } catch (error) {
+      console.error(`  ✗ Failed to save updated tokens to S3:`, error);
+      // Don't throw here - token update in memory is still valid
+    }
   }
 
   /**
@@ -189,7 +205,13 @@ class QuickBooksSessionStorage {
       console.log(
         `[QB Session Storage] Deleted session: ${sessionId} (realmId: ${session.realmId})`
       );
-      this.scheduleSave();
+      // Save immediately to persist deletion
+      try {
+        await this.save();
+        console.log(`  ✅ Session deletion persisted to S3`);
+      } catch (error) {
+        console.error(`  ✗ Failed to persist session deletion to S3:`, error);
+      }
     }
   }
 
