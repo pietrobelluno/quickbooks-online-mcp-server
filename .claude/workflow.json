@@ -4,11 +4,12 @@
     "owner": "pietrobelluno",
     "repo": "quickbooks-online-mcp-server"
   },
-  "scopes": ["backend", "integration", "infra"],
+  "scopes": ["backend", "integration", "infra", "deployment"],
   "agents": {
     "backend": ".claude/agents/qbo-backend.md",
     "integration": ".claude/agents/qbo-integration.md",
     "infra": ".claude/agents/qbo-infra.md",
+    "deployment": ".claude/agents/qbo-deployment.md",
     "reviewer": ".claude/agents/qbo-reviewer.md"
   },
   "init_script": "npm run build && npm run lint"
