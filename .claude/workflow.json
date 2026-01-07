@@ -1,0 +1,10 @@
+{
+  "project": "quickbooks-online-mcp-server",
+  "github": {
+    "owner": "",
+    "repo": ""
+  },
+  "scopes": [],
+  "agents": {},
+  "init_script": null
+}
