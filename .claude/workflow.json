@@ -1,10 +1,15 @@
 {
   "project": "quickbooks-online-mcp-server",
   "github": {
-    "owner": "",
-    "repo": ""
+    "owner": "pietrobelluno",
+    "repo": "quickbooks-online-mcp-server"
   },
-  "scopes": [],
-  "agents": {},
-  "init_script": null
+  "scopes": ["backend", "integration", "infra"],
+  "agents": {
+    "backend": ".claude/agents/qbo-backend.md",
+    "integration": ".claude/agents/qbo-integration.md",
+    "infra": ".claude/agents/qbo-infra.md",
+    "reviewer": ".claude/agents/qbo-reviewer.md"
+  },
+  "init_script": "npm run build && npm run lint"
 }

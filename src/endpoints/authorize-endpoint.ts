@@ -143,46 +143,47 @@ export async function handleAuthorizeEndpoint(
 
     console.log(`  ✓ Stored PKCE challenge for state: ${String(state).substring(0, 20)}...`);
 
-    // ========== SINGLE-COMPANY SHARED CONNECTION ==========
+    // ========== MULTI-USER SHARED CONNECTION ==========
     // Check if we already have a company connection (skip QB OAuth if yes)
+    // Use mutex lock to prevent race conditions when multiple users connect simultaneously
     const { getQuickBooksSessionStorage } = await import('../storage/quickbooks-session-storage.js');
     const { generateAuthCode } = await import('../utils/token-generator.js');
     const { getAuthCodeStorage } = await import('../storage/auth-code-storage.js');
+    const { sessionLockManager } = await import('../utils/session-lock.js');
 
     const qbSessionStorage = getQuickBooksSessionStorage();
     await qbSessionStorage.initialize();
 
-    // Get all existing sessions to check if any company is connected
-    const allRealmIds = qbSessionStorage.getAllRealmIds();
+    // Acquire mutex lock to prevent simultaneous OAuth attempts
+    const release = await sessionLockManager.acquireLock('qb-company-auth');
 
-    if (allRealmIds.length > 0) {
-      // Check if we have an existing company connection
-      const existingRealmId = allRealmIds[0]; // Use the first (and only) company connection
-      const existingConnection = qbSessionStorage.getSessionByRealmId(existingRealmId);
+    try {
+      console.log(`  → Checking for existing company connection...`);
 
-      // Check if tokens are still valid (not expired)
-      // Require at least 30 minutes validity to avoid expiring during use
-      const isTokenValid = existingConnection &&
-        existingConnection.session.qbTokenExpiresAt > Date.now() + (30 * 60 * 1000); // Valid for at least 30 more minutes
+      // Check for ANY active session with valid tokens (>30 min validity)
+      const activeSession = qbSessionStorage.getActiveCompanySession();
 
-      if (existingConnection && isTokenValid) {
+      if (activeSession) {
         // ✅ Company already connected with VALID tokens! Skip QuickBooks OAuth
-        console.log(`  ✓ Found existing company connection (realmId: ${existingRealmId})`);
-        console.log(`  ✓ Tokens valid - skipping QuickBooks OAuth`);
+        console.log(`  ✓ Found active company connection (realmId: ${activeSession.session.realmId})`);
+        console.log(`  ✓ Tokens valid - skipping QuickBooks OAuth to prevent admin replacement`);
 
-        // Generate session ID for this user
-        const sessionId = generateSessionId();
-        console.log(`  ✓ Generated session ID: ${sessionId}`);
-        // Link this user's session to the existing company tokens
-        await qbSessionStorage.storeSession(sessionId, {
-          qbAccessToken: existingConnection.session.qbAccessToken,
-          qbRefreshToken: existingConnection.session.qbRefreshToken,
-          qbTokenExpiresAt: existingConnection.session.qbTokenExpiresAt,
-          realmId: existingRealmId,
+        // Generate new session ID for this user
+        const newSessionId = generateSessionId();
+        console.log(`  ✓ Generated new session ID: ${newSessionId}`);
+
+        // Clone existing session for new user (share QB tokens, new sessionId)
+        await qbSessionStorage.storeSession(newSessionId, {
+          qbAccessToken: activeSession.session.qbAccessToken,
+          qbRefreshToken: activeSession.session.qbRefreshToken,
+          qbTokenExpiresAt: activeSession.session.qbTokenExpiresAt,
+          realmId: activeSession.session.realmId,
+          userId: undefined, // Optional: extract from request if available
           createdAt: Date.now(),
         });
 
         console.log(`  ✓ Linked new user session to existing company connection`);
+        console.log(`  → Original admin remains unchanged (no QB "Assign new admin" screen)`);
 
         // Generate MCP authorization code
         const mcpAuthCode = generateAuthCode();
@@ -191,7 +192,7 @@ export async function handleAuthorizeEndpoint(
         // Store authorization code
         const authCodeStorage = getAuthCodeStorage();
         authCodeStorage.storeAuthCode(mcpAuthCode, {
-          sessionId,
+          sessionId: newSessionId,
           claudeState: state as string,
         });
 
@@ -201,23 +202,19 @@ export async function handleAuthorizeEndpoint(
         const claudeCallbackUrl = `${redirect_uri}?code=${mcpAuthCode}&state=${state}`;
 
         console.log(`  ✓ Redirecting to Claude: ${claudeCallbackUrl.substring(0, 80)}...`);
-        console.log(`  → User automatically connected without QuickBooks OAuth!`);
+        console.log(`  ✅ User automatically connected without QuickBooks OAuth!`);
 
         // Redirect back to Claude Desktop
         return res.redirect(claudeCallbackUrl);
-      } else if (existingConnection) {
-        // Connection exists but tokens expired - clean up and re-authorize
-        console.log(`  ⚠ Existing connection found but tokens expired`);
-        console.log(`  → Clearing expired session and re-authorizing`);
-        await qbSessionStorage.deleteSession(existingConnection.sessionId);
       }
-    }
 
-    // No existing connection OR tokens expired - proceed with QuickBooks OAuth
-    if (allRealmIds.length === 0) {
-      console.log(`  → No existing company connection found`);
+      // No active session found - proceed with QuickBooks OAuth
+      console.log(`  → No active company connection found`);
+      console.log(`  → Proceeding with QuickBooks OAuth (user will see QB authorization)`);
+    } finally {
+      // Always release the lock
+      release();
     }
-    console.log(`  → Proceeding with QuickBooks OAuth`);
 
     // Generate session ID
     const sessionId = generateSessionId();

@@ -33,12 +33,74 @@ refactor(users): extract validation logic
 
 ## Code Style
 
-[To be updated by /wf-generate based on detected stack]
+### TypeScript/Node.js
+
+- Use TypeScript strict mode
+- Prefer `const` over `let`, avoid `var`
+- Use async/await over callbacks
+- Export types from dedicated files or inline
+- Use ES modules (`import/export`) not CommonJS
+- Follow existing ESLint and Prettier configurations
+- Use Zod for runtime validation and schema definition
+- Prefer descriptive variable names over abbreviations
+
+### MCP Server Patterns
+
+- Keep tool handlers focused and single-purpose
+- Validate all inputs with Zod schemas
+- Return structured error messages
+- Use proper MCP SDK types and patterns
+- Document tool parameters and return types
+
+### QuickBooks Integration
+
+- Handle OAuth token refresh gracefully
+- Check realm ID before API calls
+- Wrap QuickBooks SDK calls with proper error handling
+- Log API errors with context
+- Use environment variables for all credentials
 
 ## Testing
 
-[To be updated by /wf-generate based on detected stack]
+- Write unit tests for business logic
+- Test error handling paths
+- Mock QuickBooks API calls in tests
+- Run tests with: `npm test` (when configured)
+- Run linting: `npm run lint`
+- Fix lint issues: `npm run lint:fix`
 
 ## File Organization
 
-[To be updated by /wf-generate based on project structure]
+```
+src/
+├── index.ts              # STDIO MCP server entry
+├── index-http.ts         # HTTP MCP server entry
+├── auth-server.ts        # OAuth flow handler
+├── tools/                # MCP tool implementations
+├── schemas/              # Zod validation schemas
+└── utils/                # Shared utilities
+
+.env                      # Local credentials (gitignored)
+Dockerfile                # Container configuration
+```
+
+## Environment Variables
+
+Required for all environments:
+- `QUICKBOOKS_CLIENT_ID` - OAuth client ID
+- `QUICKBOOKS_CLIENT_SECRET` - OAuth client secret
+- `QUICKBOOKS_ENVIRONMENT` - `sandbox` or `production`
+- `QUICKBOOKS_REFRESH_TOKEN` - OAuth refresh token
+- `QUICKBOOKS_REALM_ID` - Company/realm identifier
+
+## Build and Run
+
+```bash
+npm run build          # Compile TypeScript
+npm run watch          # Watch mode for development
+npm run lint           # Check code style
+npm run lint:fix       # Auto-fix lint issues
+npm run auth           # Run OAuth flow
+npm run start:stdio    # Start STDIO server
+npm run start:http     # Start HTTP server
+```

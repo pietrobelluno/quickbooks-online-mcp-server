@@ -32,6 +32,12 @@ export interface QuickBooksSession {
   /** Optional user identifier */
   userId?: string;
 
+  /** Optional user email for audit logs */
+  userEmail?: string;
+
+  /** Track which users are sharing this connection (for multi-user scenarios) */
+  sharedWith?: string[];
+
   /** Timestamp when session was created */
   createdAt: number;
 
@@ -216,6 +222,34 @@ class QuickBooksSessionStorage {
         return { sessionId, session };
       }
     }
+    return undefined;
+  }
+
+  /**
+   * Get active company session (for multi-user authorization)
+   * Returns the FIRST session that has valid tokens (not expiring soon)
+   * This enables multiple users to share the same company connection
+   * @returns Session data with sessionId if found, undefined otherwise
+   */
+  getActiveCompanySession(): { sessionId: string; session: QuickBooksSession } | undefined {
+    const now = Date.now();
+    const VALIDITY_BUFFER = 30 * 60 * 1000; // 30 minutes
+
+    // Find first session with valid tokens (>30 min until expiry)
+    for (const [sessionId, session] of this.sessions.entries()) {
+      if (session.qbTokenExpiresAt > now + VALIDITY_BUFFER) {
+        // Update last used timestamp
+        session.lastUsedAt = Date.now();
+
+        console.log(
+          `[QB Session Storage] Found active company session: ${sessionId} (realmId: ${session.realmId}, expires in ${Math.round((session.qbTokenExpiresAt - now) / 60000)} min)`
+        );
+
+        return { sessionId, session };
+      }
+    }
+
+    console.log('[QB Session Storage] No active company session found');
     return undefined;
   }
 
