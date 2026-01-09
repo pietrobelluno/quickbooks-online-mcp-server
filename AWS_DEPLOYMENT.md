@@ -6,8 +6,8 @@ This guide covers deploying the QuickBooks MCP Server to AWS App Runner.
 
 - **AWS Account**: 700633997241
 - **Region**: us-east-1
-- **App Runner Service**: qbo-oauth-redirect
-- **ECR Repository**: 700633997241.dkr.ecr.us-east-1.amazonaws.com/qbo-oauth-redirect
+- **App Runner Service**: qbo-oauth-redirect (name unchanged, but uses correct ECR)
+- **ECR Repository**: 700633997241.dkr.ecr.us-east-1.amazonaws.com/quickbooks-mcp-server
 - **Load Balancer**: quickbooks-mcp-alb
 - **Public URL**: https://quickbooks.gnarlysoft-mcp.com
 - **S3 Bucket**: quickbooks-mcp-sessions (for token storage)
@@ -32,7 +32,7 @@ This will open your browser for authentication. Once completed, you'll have temp
 
 ```bash
 # Build the Docker image locally
-docker build -t qbo-oauth-redirect:latest .
+docker build -t quickbooks-mcp-server:latest .
 ```
 
 The build process:
@@ -52,14 +52,14 @@ aws ecr get-login-password --region us-east-1 | docker login --username AWS --pa
 
 ```bash
 # Tag with latest
-docker tag qbo-oauth-redirect:latest 700633997241.dkr.ecr.us-east-1.amazonaws.com/qbo-oauth-redirect:latest
+docker tag quickbooks-mcp-server:latest 700633997241.dkr.ecr.us-east-1.amazonaws.com/quickbooks-mcp-server:latest
 
 # Tag with git commit hash (for versioning)
-docker tag qbo-oauth-redirect:latest 700633997241.dkr.ecr.us-east-1.amazonaws.com/qbo-oauth-redirect:$(git rev-parse --short HEAD)
+docker tag quickbooks-mcp-server:latest 700633997241.dkr.ecr.us-east-1.amazonaws.com/quickbooks-mcp-server:$(git rev-parse --short HEAD)
 
 # Push both tags
-docker push 700633997241.dkr.ecr.us-east-1.amazonaws.com/qbo-oauth-redirect:latest
-docker push 700633997241.dkr.ecr.us-east-1.amazonaws.com/qbo-oauth-redirect:$(git rev-parse --short HEAD)
+docker push 700633997241.dkr.ecr.us-east-1.amazonaws.com/quickbooks-mcp-server:latest
+docker push 700633997241.dkr.ecr.us-east-1.amazonaws.com/quickbooks-mcp-server:$(git rev-parse --short HEAD)
 ```
 
 ### 5. Update App Runner Service
@@ -69,7 +69,7 @@ export AWS_PROFILE=launchpad-mcp-devops
 
 aws apprunner update-service \
   --service-arn "arn:aws:apprunner:us-east-1:700633997241:service/qbo-oauth-redirect/f7b28bd2c0f24d0ea9889bb7f54d15c0" \
-  --source-configuration "ImageRepository={ImageIdentifier=700633997241.dkr.ecr.us-east-1.amazonaws.com/qbo-oauth-redirect:latest,ImageRepositoryType=ECR,ImageConfiguration={Port=8080}}"
+  --source-configuration "ImageRepository={ImageIdentifier=700633997241.dkr.ecr.us-east-1.amazonaws.com/quickbooks-mcp-server:latest,ImageRepositoryType=ECR,ImageConfiguration={Port=8080}}"
 ```
 
 App Runner will automatically:
@@ -139,12 +139,12 @@ To manually rollback to a specific version:
 
 ```bash
 # List image tags
-aws ecr list-images --repository-name qbo-oauth-redirect --query 'imageIds[*].imageTag' --output table
+aws ecr list-images --repository-name quickbooks-mcp-server --query 'imageIds[*].imageTag' --output table
 
 # Deploy specific version
 aws apprunner update-service \
   --service-arn "arn:aws:apprunner:us-east-1:700633997241:service/qbo-oauth-redirect/f7b28bd2c0f24d0ea9889bb7f54d15c0" \
-  --source-configuration "ImageRepository={ImageIdentifier=700633997241.dkr.ecr.us-east-1.amazonaws.com/qbo-oauth-redirect:<commit-hash>,ImageRepositoryType=ECR,ImageConfiguration={Port=8080}}"
+  --source-configuration "ImageRepository={ImageIdentifier=700633997241.dkr.ecr.us-east-1.amazonaws.com/quickbooks-mcp-server:<commit-hash>,ImageRepositoryType=ECR,ImageConfiguration={Port=8080}}"
 ```
 
 ## Environment Variables
@@ -179,7 +179,7 @@ aws apprunner update-service \
 ### "Unable to pull image from ECR"
 - Verify ECR login: `aws ecr get-login-password`
 - Check IAM role: `AppRunnerECRAccessRole` has ECR read permissions
-- Confirm image exists: `aws ecr describe-images --repository-name qbo-oauth-redirect`
+- Confirm image exists: `aws ecr describe-images --repository-name quickbooks-mcp-server`
 
 ### Service Shows "RUNNING" but Health Check Fails
 - Check health endpoint directly: `curl https://quickbooks.gnarlysoft-mcp.com/health`
@@ -208,23 +208,23 @@ export AWS_PROFILE=launchpad-mcp-devops
 GIT_HASH=$(git rev-parse --short HEAD)
 
 echo "📦 Building Docker image..."
-docker build -t qbo-oauth-redirect:latest .
+docker build -t quickbooks-mcp-server:latest .
 
 echo "🔐 Logging into ECR..."
 aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 700633997241.dkr.ecr.us-east-1.amazonaws.com
 
 echo "🏷️  Tagging images..."
-docker tag qbo-oauth-redirect:latest 700633997241.dkr.ecr.us-east-1.amazonaws.com/qbo-oauth-redirect:latest
-docker tag qbo-oauth-redirect:latest 700633997241.dkr.ecr.us-east-1.amazonaws.com/qbo-oauth-redirect:$GIT_HASH
+docker tag quickbooks-mcp-server:latest 700633997241.dkr.ecr.us-east-1.amazonaws.com/quickbooks-mcp-server:latest
+docker tag quickbooks-mcp-server:latest 700633997241.dkr.ecr.us-east-1.amazonaws.com/quickbooks-mcp-server:$GIT_HASH
 
 echo "📤 Pushing to ECR..."
-docker push 700633997241.dkr.ecr.us-east-1.amazonaws.com/qbo-oauth-redirect:latest
-docker push 700633997241.dkr.ecr.us-east-1.amazonaws.com/qbo-oauth-redirect:$GIT_HASH
+docker push 700633997241.dkr.ecr.us-east-1.amazonaws.com/quickbooks-mcp-server:latest
+docker push 700633997241.dkr.ecr.us-east-1.amazonaws.com/quickbooks-mcp-server:$GIT_HASH
 
 echo "🔄 Updating App Runner service..."
 aws apprunner update-service \
   --service-arn "arn:aws:apprunner:us-east-1:700633997241:service/qbo-oauth-redirect/f7b28bd2c0f24d0ea9889bb7f54d15c0" \
-  --source-configuration "ImageRepository={ImageIdentifier=700633997241.dkr.ecr.us-east-1.amazonaws.com/qbo-oauth-redirect:latest,ImageRepositoryType=ECR,ImageConfiguration={Port=8080}}"
+  --source-configuration "ImageRepository={ImageIdentifier=700633997241.dkr.ecr.us-east-1.amazonaws.com/quickbooks-mcp-server:latest,ImageRepositoryType=ECR,ImageConfiguration={Port=8080}}"
 
 echo "⏳ Waiting for deployment to complete..."
 sleep 60
