@@ -5,9 +5,41 @@
 
 ## Current Status
 **Phase**: Development
-**Last Updated**: 2026-01-07
+**Last Updated**: 2026-01-09
 
 ---
+
+### Session 3 (2026-01-09)
+**Focus**: Security fix, tool optimization, infrastructure correction & bug investigation
+**Working On**: Multiple issues - Security (.env exposed), Issue #2 (disable data-heavy tools), Infrastructure (wrong ECR), Session persistence
+**Branch**: feature/2-disable-data-heavy-tools
+**Completed**:
+- [x] **CRITICAL SECURITY FIX**: Removed .env from git tracking and history (exposed production credentials)
+- [x] Rewrote entire git history using filter-branch to remove .env
+- [x] Force-pushed all branches to GitHub to remove sensitive data
+- [x] Added comprehensive .gitignore for sensitive files
+- [x] Created GitHub issue #2 for tool optimization
+- [x] Disabled 52 data-heavy tools (Search/Get/Create/Update/Delete)
+- [x] Kept only QueryReports tool active (prevents Claude Desktop hanging)
+- [x] Updated README.md with active/disabled tools documentation
+- [x] Built and deployed fix to production (commit 1e81eb7)
+- [x] **INFRASTRUCTURE FIX**: Corrected ECR repository references
+  - Changed from `qbo-oauth-redirect` to `quickbooks-mcp-server`
+  - Updated App Runner service to use correct ECR
+  - Built and pushed AMD64 Docker image (fixed "exec format error")
+  - Deleted obsolete `qbo-oauth-redirect` ECR repository
+- [x] Fixed session persistence bug (immediate S3 saves, no debounce)
+- [x] Updated AWS_DEPLOYMENT.md and qbo-deployment agent docs
+- [x] Deployed all fixes to production successfully
+- [x] Investigated authentication bug (token expiration, needs reconnect)
+**Blockers**: None
+**Decisions**:
+- **Security**: NEVER commit .env files, use .gitignore, rotate compromised credentials
+- **Tool Strategy**: Disable all except QueryReports to prevent context overflow
+- **ECR Naming**: Use `quickbooks-mcp-server` as canonical repository name
+- **Docker**: Build for AMD64 architecture (App Runner requirement)
+- **Session Storage**: Immediate S3 saves (no debounce) for reliability
+**Next**: Test QueryReports tool, verify multi-user session sharing, rotate QB credentials
 
 ### Session 2 (2026-01-07)
 **Focus**: Multi-user session management - Prevent QB admin replacement & AWS deployment
@@ -51,23 +83,32 @@
 > Keep only the last 5 sessions in this file for AI readability.
 
 ## In Progress
-- #1: Testing multi-user session management in production
+- #2: Testing disabled tools in production (branch: feature/2-disable-data-heavy-tools)
 
 ## Next Session Should
-- [ ] Test multi-user connection with 2+ Claude Desktop instances
-- [ ] Verify no "Assign new admin" screen appears for User B, C, D
-- [ ] Check production logs for session reuse confirmation
-- [ ] Consider merging feature/1-prevent-admin-replacement to main
-- [ ] Update issue #1 with test results
+- [ ] **URGENT**: Rotate QuickBooks production credentials (Client ID and Secret were exposed on GitHub)
+- [ ] Test QueryReports tool functionality in Claude Desktop
+- [ ] Reconnect Claude Desktop to generate fresh QuickBooks tokens
+- [ ] Test multi-user session sharing (User A connects, User B should reuse session)
+- [ ] Verify no "authentication required" errors after reconnect
+- [ ] Consider merging feature/2-disable-data-heavy-tools to main
+- [ ] Close issue #2 if testing successful
+- [ ] Update issue #1 with multi-user test results
 
 ## Decisions Made
 - **Multi-User Session Strategy**: Mutex + early-exit pattern to prevent duplicate OAuth flows
 - **Token Sharing**: QB tokens shared across users (safe: company-level tokens), MCP tokens isolated per user
 - **Deployment**: Direct to production via AWS App Runner, no staging environment needed
 - **Agent Structure**: 5 specialized agents (backend, integration, infra, deployment, reviewer)
+- **Security**: All sensitive files in .gitignore, git history cleaned, credentials must be rotated
+- **Tool Strategy**: Only QueryReports enabled (52 tools disabled) to prevent Claude hanging
+- **Infrastructure**: ECR `quickbooks-mcp-server` is canonical, `qbo-oauth-redirect` deleted
+- **Session Persistence**: Immediate S3 writes (no debounce) for critical data
 
 ## Notes
 - Production URL: https://quickbooks.gnarlysoft-mcp.com
 - AWS Account: 700633997241 (launchpad-mcp-devops profile)
 - Session storage: S3 bucket `quickbooks-mcp-sessions`
-- Latest deployment: commit e9ca737 (multi-user session fix)
+- Latest deployment: commit 1e81eb7 (tools disabled) + 15a4282 (ECR docs update)
+- ECR Repository: `quickbooks-mcp-server` (AMD64 images)
+- App Runner Service: `qbo-oauth-redirect` (uses `quickbooks-mcp-server` ECR)
