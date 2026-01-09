@@ -330,6 +330,24 @@ const main = async () => {
     });
   });
 
+  // MCP Connector Manifest (Remote MCP Server Discovery)
+  // This endpoint allows Claude Desktop to discover the connector
+  app.get("/.well-known/mcp.json", (req, res) => {
+    const baseUrl = `https://${req.get('host')}`;
+    res.json({
+      name: "QuickBooks Online",
+      description: "Access QuickBooks Online data including reports, customers, invoices, and more",
+      version: "1.0.0",
+      authorization_url: `${baseUrl}/authorize`,
+      oauth_authorization_server: `${baseUrl}/.well-known/oauth-authorization-server`,
+      capabilities: {
+        tools: true,
+        resources: false,
+        prompts: false
+      }
+    });
+  });
+
   // Dynamic Client Registration (RFC 7591)
   app.post("/register", oauthLimiter, handleRegisterEndpoint);
 
