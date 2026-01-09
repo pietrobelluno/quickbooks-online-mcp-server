@@ -17,71 +17,75 @@ import { quickbooksClient } from "./clients/quickbooks-client.js";
 import { generateAuthCode } from "./utils/token-generator.js";
 
 // Import read-only tools (Search + Get/Read for all entities)
+// DISABLED: These tools fetch too much data and cause Claude Desktop to hang
+// See issue #2: https://github.com/pietrobelluno/quickbooks-online-mcp-server/issues/2
 // Core Business
-import { SearchCustomersTool } from "./tools/search-customers.tool.js";
-import { GetCustomerTool } from "./tools/get-customer.tool.js";
-import { SearchInvoicesTool } from "./tools/search-invoices.tool.js";
-import { ReadInvoiceTool } from "./tools/read-invoice.tool.js";
-import { SearchItemsTool } from "./tools/search-items.tool.js";
-import { ReadItemTool } from "./tools/read-item.tool.js";
-import { SearchVendorsTool } from "./tools/search-vendors.tool.js";
-import { GetVendorTool } from "./tools/get-vendor.tool.js";
+// import { SearchCustomersTool } from "./tools/search-customers.tool.js";
+// import { GetCustomerTool } from "./tools/get-customer.tool.js";
+// import { SearchInvoicesTool } from "./tools/search-invoices.tool.js";
+// import { ReadInvoiceTool } from "./tools/read-invoice.tool.js";
+// import { SearchItemsTool } from "./tools/search-items.tool.js";
+// import { ReadItemTool } from "./tools/read-item.tool.js";
+// import { SearchVendorsTool } from "./tools/search-vendors.tool.js";
+// import { GetVendorTool } from "./tools/get-vendor.tool.js";
 
 // Financial
-import { SearchBillsTool } from "./tools/search-bills.tool.js";
-import { GetBillTool } from "./tools/get-bill.tool.js";
-import { SearchEstimatesTool } from "./tools/search-estimates.tool.js";
-import { GetEstimateTool } from "./tools/get-estimate.tool.js";
-import { SearchBillPaymentsTool } from "./tools/search-bill-payments.tool.js";
-import { GetBillPaymentTool } from "./tools/get-bill-payment.tool.js";
-import { SearchPurchasesTool } from "./tools/search-purchases.tool.js";
-import { GetPurchaseTool } from "./tools/get-purchase.tool.js";
+// import { SearchBillsTool } from "./tools/search-bills.tool.js";
+// import { GetBillTool } from "./tools/get-bill.tool.js";
+// import { SearchEstimatesTool } from "./tools/search-estimates.tool.js";
+// import { GetEstimateTool } from "./tools/get-estimate.tool.js";
+// import { SearchBillPaymentsTool } from "./tools/search-bill-payments.tool.js";
+// import { GetBillPaymentTool } from "./tools/get-bill-payment.tool.js";
+// import { SearchPurchasesTool } from "./tools/search-purchases.tool.js";
+// import { GetPurchaseTool } from "./tools/get-purchase.tool.js";
 
 // Other
-import { SearchEmployeesTool } from "./tools/search-employees.tool.js";
-import { GetEmployeeTool } from "./tools/get-employee.tool.js";
-import { SearchJournalEntriesTool } from "./tools/search-journal-entries.tool.js";
-import { GetJournalEntryTool } from "./tools/get-journal-entry.tool.js";
-import { SearchAccountsTool } from "./tools/search-accounts.tool.js";
+// import { SearchEmployeesTool } from "./tools/search-employees.tool.js";
+// import { GetEmployeeTool } from "./tools/get-employee.tool.js";
+// import { SearchJournalEntriesTool } from "./tools/search-journal-entries.tool.js";
+// import { GetJournalEntryTool } from "./tools/get-journal-entry.tool.js";
+// import { SearchAccountsTool } from "./tools/search-accounts.tool.js";
 
 // Query tools (flexible querying)
 import { QueryReportsTool } from "./tools/query-reports.tool.js";
 
 // Import destructive tools (Create/Update/Delete for all entities)
+// DISABLED: These tools are not needed for read-only QuickBooks data access
+// See issue #2: https://github.com/pietrobelluno/quickbooks-online-mcp-server/issues/2
 // Create tools
-import { CreateCustomerTool } from "./tools/create-customer.tool.js";
-import { CreateInvoiceTool } from "./tools/create-invoice.tool.js";
-import { CreateItemTool } from "./tools/create-item.tool.js";
-import { CreateVendorTool } from "./tools/create-vendor.tool.js";
-import { CreateBillTool } from "./tools/create-bill.tool.js";
-import { CreateEstimateTool } from "./tools/create-estimate.tool.js";
-import { CreateBillPaymentTool } from "./tools/create-bill-payment.tool.js";
-import { CreatePurchaseTool } from "./tools/create-purchase.tool.js";
-import { CreateEmployeeTool } from "./tools/create-employee.tool.js";
-import { CreateJournalEntryTool } from "./tools/create-journal-entry.tool.js";
-import { CreateAccountTool } from "./tools/create-account.tool.js";
+// import { CreateCustomerTool } from "./tools/create-customer.tool.js";
+// import { CreateInvoiceTool } from "./tools/create-invoice.tool.js";
+// import { CreateItemTool } from "./tools/create-item.tool.js";
+// import { CreateVendorTool } from "./tools/create-vendor.tool.js";
+// import { CreateBillTool } from "./tools/create-bill.tool.js";
+// import { CreateEstimateTool } from "./tools/create-estimate.tool.js";
+// import { CreateBillPaymentTool } from "./tools/create-bill-payment.tool.js";
+// import { CreatePurchaseTool } from "./tools/create-purchase.tool.js";
+// import { CreateEmployeeTool } from "./tools/create-employee.tool.js";
+// import { CreateJournalEntryTool } from "./tools/create-journal-entry.tool.js";
+// import { CreateAccountTool } from "./tools/create-account.tool.js";
 
 // Update tools
-import { UpdateCustomerTool } from "./tools/update-customer.tool.js";
-import { UpdateInvoiceTool } from "./tools/update-invoice.tool.js";
-import { UpdateItemTool } from "./tools/update-item.tool.js";
-import { UpdateVendorTool } from "./tools/update-vendor.tool.js";
-import { UpdateBillTool } from "./tools/update-bill.tool.js";
-import { UpdateEstimateTool } from "./tools/update-estimate.tool.js";
-import { UpdateBillPaymentTool } from "./tools/update-bill-payment.tool.js";
-import { UpdatePurchaseTool } from "./tools/update-purchase.tool.js";
-import { UpdateEmployeeTool } from "./tools/update-employee.tool.js";
-import { UpdateJournalEntryTool } from "./tools/update-journal-entry.tool.js";
-import { UpdateAccountTool } from "./tools/update-account.tool.js";
+// import { UpdateCustomerTool } from "./tools/update-customer.tool.js";
+// import { UpdateInvoiceTool } from "./tools/update-invoice.tool.js";
+// import { UpdateItemTool } from "./tools/update-item.tool.js";
+// import { UpdateVendorTool } from "./tools/update-vendor.tool.js";
+// import { UpdateBillTool } from "./tools/update-bill.tool.js";
+// import { UpdateEstimateTool } from "./tools/update-estimate.tool.js";
+// import { UpdateBillPaymentTool } from "./tools/update-bill-payment.tool.js";
+// import { UpdatePurchaseTool } from "./tools/update-purchase.tool.js";
+// import { UpdateEmployeeTool } from "./tools/update-employee.tool.js";
+// import { UpdateJournalEntryTool } from "./tools/update-journal-entry.tool.js";
+// import { UpdateAccountTool } from "./tools/update-account.tool.js";
 
 // Delete tools
-import { DeleteCustomerTool } from "./tools/delete-customer.tool.js";
-import { DeleteVendorTool } from "./tools/delete-vendor.tool.js";
-import { DeleteBillTool } from "./tools/delete-bill.tool.js";
-import { DeleteEstimateTool } from "./tools/delete-estimate.tool.js";
-import { DeleteBillPaymentTool } from "./tools/delete-bill-payment.tool.js";
-import { DeletePurchaseTool } from "./tools/delete-purchase.tool.js";
-import { DeleteJournalEntryTool } from "./tools/delete-journal-entry.tool.js";
+// import { DeleteCustomerTool } from "./tools/delete-customer.tool.js";
+// import { DeleteVendorTool } from "./tools/delete-vendor.tool.js";
+// import { DeleteBillTool } from "./tools/delete-bill.tool.js";
+// import { DeleteEstimateTool } from "./tools/delete-estimate.tool.js";
+// import { DeleteBillPaymentTool } from "./tools/delete-bill-payment.tool.js";
+// import { DeletePurchaseTool } from "./tools/delete-purchase.tool.js";
+// import { DeleteJournalEntryTool } from "./tools/delete-journal-entry.tool.js";
 
 // Tool registry (will be populated by RegisterTool)
 const toolRegistry = new Map<string, any>();
@@ -183,73 +187,75 @@ const main = async () => {
   const server = QuickbooksMCPServer.GetServer();
 
   // Register all tools in both MCP server and HTTP registry
+  // DISABLED: Most tools disabled to prevent Claude Desktop from hanging
+  // See issue #2: https://github.com/pietrobelluno/quickbooks-online-mcp-server/issues/2
   const tools = [
-    // Read-only tools (22 tools = 21 + 1 query tool)
-    // Query tool (flexible report generation)
+    // Query tool (flexible report generation) - ENABLED ✅
     QueryReportsTool,
 
+    // Read-only tools - DISABLED (fetch too much data)
     // Core Business (8 tools)
-    SearchCustomersTool,
-    GetCustomerTool,
-    SearchInvoicesTool,
-    ReadInvoiceTool,
-    SearchItemsTool,
-    ReadItemTool,
-    SearchVendorsTool,
-    GetVendorTool,
+    // SearchCustomersTool,
+    // GetCustomerTool,
+    // SearchInvoicesTool,
+    // ReadInvoiceTool,
+    // SearchItemsTool,
+    // ReadItemTool,
+    // SearchVendorsTool,
+    // GetVendorTool,
 
     // Financial (8 tools)
-    SearchBillsTool,
-    GetBillTool,
-    SearchEstimatesTool,
-    GetEstimateTool,
-    SearchBillPaymentsTool,
-    GetBillPaymentTool,
-    SearchPurchasesTool,
-    GetPurchaseTool,
+    // SearchBillsTool,
+    // GetBillTool,
+    // SearchEstimatesTool,
+    // GetEstimateTool,
+    // SearchBillPaymentsTool,
+    // GetBillPaymentTool,
+    // SearchPurchasesTool,
+    // GetPurchaseTool,
 
     // Other (5 tools)
-    SearchEmployeesTool,
-    GetEmployeeTool,
-    SearchJournalEntriesTool,
-    GetJournalEntryTool,
-    SearchAccountsTool,
+    // SearchEmployeesTool,
+    // GetEmployeeTool,
+    // SearchJournalEntriesTool,
+    // GetJournalEntryTool,
+    // SearchAccountsTool,
 
-    // Destructive tools (31 tools)
+    // Destructive tools - DISABLED (not needed for read-only access)
     // Create tools (11 tools)
-    CreateCustomerTool,
-    CreateInvoiceTool,
-    CreateItemTool,
-    CreateVendorTool,
-    CreateBillTool,
-    CreateEstimateTool,
-    CreateBillPaymentTool,
-    CreatePurchaseTool,
-    CreateEmployeeTool,
-    CreateJournalEntryTool,
-    CreateAccountTool,
+    // CreateCustomerTool,
+    // CreateInvoiceTool,
+    // CreateItemTool,
+    // CreateVendorTool,
+    // CreateBillTool,
+    // CreateEstimateTool,
+    // CreateBillPaymentTool,
+    // CreatePurchaseTool,
+    // CreateEmployeeTool,
+    // CreateJournalEntryTool,
+    // CreateAccountTool,
 
     // Update tools (13 tools)
-    UpdateCustomerTool,
-    UpdateInvoiceTool,
-    UpdateItemTool,
-    UpdateVendorTool,
-    UpdateBillTool,
-    UpdateEstimateTool,
-    UpdateBillPaymentTool,
-    UpdatePurchaseTool,
-    UpdateEmployeeTool,
-    UpdateJournalEntryTool,
-    UpdateAccountTool,
+    // UpdateCustomerTool,
+    // UpdateInvoiceTool,
+    // UpdateItemTool,
+    // UpdateVendorTool,
+    // UpdateBillTool,
+    // UpdateEstimateTool,
+    // UpdateBillPaymentTool,
+    // UpdatePurchaseTool,
+    // UpdateEmployeeTool,
+    // UpdateJournalEntryTool,
+    // UpdateAccountTool,
 
     // Delete tools (7 tools)
-    DeleteCustomerTool,
-    DeleteVendorTool,
-    DeleteBillTool,
-    DeleteEstimateTool,
-    DeleteBillPaymentTool,
-    DeletePurchaseTool,
-    DeleteJournalEntryTool,
+    // DeleteCustomerTool,
+    // DeleteVendorTool,
+    // DeleteBillTool,
+    // DeleteEstimateTool,
+    // DeleteBillPaymentTool,
+    // DeletePurchaseTool,
+    // DeleteJournalEntryTool,
   ];
 
   for (const tool of tools) {
@@ -258,7 +264,7 @@ const main = async () => {
   }
 
   console.log(
-    `✓ Registered ${tools.length} QuickBooks tools (23 read-only + 29 destructive)`
+    `✓ Registered ${tools.length} QuickBooks tool(s) - QueryReports only (52 other tools disabled, see issue #2)`
   );
 
   // Create Express app

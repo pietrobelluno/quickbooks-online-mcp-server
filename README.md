@@ -52,20 +52,23 @@ After authentication is set up, you can use the MCP server to interact with Quic
 
 ## Available Tools
 
-Added tools for Create, Delete, Get, Search, Update for the following entities:
+**Note**: As of Issue #2, most tools have been disabled to prevent Claude Desktop from hanging due to large data responses. Only the QueryReports tool is currently active.
 
+### Active Tools
 
-- Account
-- Bill Payment
-- Bill
-- Customer
-- Employee
-- Estimate
-- Invoice
-- Item
-- Journal Entry
-- Purchase
-- Vendor
+- **QueryReports** - Flexible report generation for QuickBooks data (recommended for all queries)
+
+### Disabled Tools
+
+The following tools are currently disabled but can be re-enabled in the future with pagination support:
+
+- Search tools: SearchCustomers, SearchInvoices, SearchItems, SearchVendors, SearchBills, SearchEstimates, SearchBillPayments, SearchPurchases, SearchEmployees, SearchJournalEntries, SearchAccounts
+- Get/Read tools: GetCustomer, ReadInvoice, ReadItem, GetVendor, GetBill, GetEstimate, GetBillPayment, GetPurchase, GetEmployee, GetJournalEntry
+- Create tools: CreateCustomer, CreateInvoice, CreateItem, CreateVendor, CreateBill, CreateEstimate, CreateBillPayment, CreatePurchase, CreateEmployee, CreateJournalEntry, CreateAccount
+- Update tools: UpdateCustomer, UpdateInvoice, UpdateItem, UpdateVendor, UpdateBill, UpdateEstimate, UpdateBillPayment, UpdatePurchase, UpdateEmployee, UpdateJournalEntry, UpdateAccount
+- Delete tools: DeleteCustomer, DeleteVendor, DeleteBill, DeleteEstimate, DeleteBillPayment, DeletePurchase, DeleteJournalEntry
+
+**Why?** These tools fetch large amounts of data per request, which exceeds Claude's context window and causes the integration to hang. The QueryReports tool provides efficient access to QuickBooks data through report queries.
 
 
 ## Error Handling
