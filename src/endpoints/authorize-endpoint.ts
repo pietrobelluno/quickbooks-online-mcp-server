@@ -161,12 +161,63 @@ export async function handleAuthorizeEndpoint(
     try {
       console.log(`  → Checking for existing company connection...`);
 
-      // Check for ANY active session with valid tokens (>30 min validity)
-      const activeSession = qbSessionStorage.getActiveCompanySession();
+      // Check for ANY existing company session (even if expired)
+      const allSessions = qbSessionStorage.getAllSessions();
+      const existingSession = allSessions.length > 0 ? allSessions[0] : null;
 
-      if (activeSession) {
-        // ✅ Company already connected with VALID tokens! Skip QuickBooks OAuth
-        console.log(`  ✓ Found active company connection (realmId: ${activeSession.session.realmId})`);
+      if (existingSession) {
+        const [existingSessionId, session] = existingSession;
+        const timeUntilExpiry = session.qbTokenExpiresAt - Date.now();
+        const thirtyMinutes = 30 * 60 * 1000;
+
+        console.log(`  ✓ Found existing company session (realmId: ${session.realmId})`);
+        console.log(`  → Token expires in: ${Math.round(timeUntilExpiry / 60000)} minutes`);
+
+        // If token has >30 min validity, use it directly (optimal case)
+        if (timeUntilExpiry > thirtyMinutes) {
+          console.log(`  ✓ Token still valid - using existing session`);
+        } else {
+          // Token expired or expiring soon - try to refresh it
+          console.log(`  → Token expired or expiring soon - attempting refresh...`);
+
+          try {
+            // Import QuickBooks client and token refresh service
+            const { quickbooksClient } = await import('../clients/quickbooks-client.js');
+            const { getTokenRefreshService } = await import('../services/token-refresh-service.js');
+
+            const tokenRefreshService = getTokenRefreshService(quickbooksClient);
+
+            // Attempt to refresh the token
+            await tokenRefreshService.refreshQuickBooksToken(existingSessionId);
+
+            console.log(`  ✓ Successfully refreshed QuickBooks tokens`);
+            console.log(`  → Session kept alive - no QuickBooks OAuth required`);
+
+            // Reload the session after refresh to get updated tokens
+            const refreshedSession = qbSessionStorage.getSession(existingSessionId);
+            if (!refreshedSession) {
+              throw new Error('Session disappeared after refresh');
+            }
+
+            // Update our reference to use refreshed session
+            session.qbAccessToken = refreshedSession.qbAccessToken;
+            session.qbRefreshToken = refreshedSession.qbRefreshToken;
+            session.qbTokenExpiresAt = refreshedSession.qbTokenExpiresAt;
+
+          } catch (refreshError: any) {
+            console.error(`  ✗ Token refresh failed: ${refreshError.message}`);
+            console.log(`  → Refresh token may be expired or invalid`);
+            console.log(`  → Proceeding with QuickBooks OAuth (user will see QB authorization)`);
+
+            // Refresh failed - clear the old session and proceed to QB OAuth
+            await qbSessionStorage.deleteSession(existingSessionId);
+
+            // Break out of the if block to proceed with QB OAuth
+            throw new Error('REFRESH_FAILED');
+          }
+        }
+
+        // At this point, we have a valid session (either already valid or just refreshed)
         console.log(`  ✓ Tokens valid - skipping QuickBooks OAuth to prevent admin replacement`);
 
         // Generate new session ID for this user
@@ -175,10 +226,10 @@ export async function handleAuthorizeEndpoint(
 
         // Clone existing session for new user (share QB tokens, new sessionId)
         await qbSessionStorage.storeSession(newSessionId, {
-          qbAccessToken: activeSession.session.qbAccessToken,
-          qbRefreshToken: activeSession.session.qbRefreshToken,
-          qbTokenExpiresAt: activeSession.session.qbTokenExpiresAt,
-          realmId: activeSession.session.realmId,
+          qbAccessToken: session.qbAccessToken,
+          qbRefreshToken: session.qbRefreshToken,
+          qbTokenExpiresAt: session.qbTokenExpiresAt,
+          realmId: session.realmId,
           userId: undefined, // Optional: extract from request if available
           createdAt: Date.now(),
         });
@@ -207,11 +258,19 @@ export async function handleAuthorizeEndpoint(
 
         // Redirect back to Claude Desktop
         return res.redirect(claudeCallbackUrl);
+      } else {
+        // No existing session found - proceed with QuickBooks OAuth
+        console.log(`  → No company session found`);
+        console.log(`  → Proceeding with QuickBooks OAuth (user will see QB authorization)`);
       }
-
-      // No active session found - proceed with QuickBooks OAuth
-      console.log(`  → No active company connection found`);
-      console.log(`  → Proceeding with QuickBooks OAuth (user will see QB authorization)`);
+    } catch (error: any) {
+      // If we threw 'REFRESH_FAILED', continue to QB OAuth below
+      if (error.message === 'REFRESH_FAILED') {
+        console.log(`  → Continuing to QuickBooks OAuth after refresh failure`);
+      } else {
+        // Re-throw other errors
+        throw error;
+      }
     } finally {
       // Always release the lock
       release();
