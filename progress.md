@@ -5,9 +5,38 @@
 
 ## Current Status
 **Phase**: Development
-**Last Updated**: 2026-01-09
+**Last Updated**: 2026-01-26
 
 ---
+
+### Session 4 (2026-01-26)
+**Focus**: Remote MCP Connector fix - Added manifest endpoint & automatic token refresh
+**Working On**: Issue with Claude Desktop Custom Connector not connecting (missing manifest endpoint)
+**Branch**: feature/2-disable-data-heavy-tools
+**Completed**:
+- [x] **INFRASTRUCTURE CORRECTION**: Discovered duplicate deployments (App Runner vs ECS)
+  - Found: App Runner `qbo-oauth-redirect` (obsolete, not connected to domain)
+  - Found: ECS Fargate `quickbooks-mcp-cluster` (actual production, domain points here)
+  - Deleted obsolete App Runner service
+  - Updated qbo-deployment agent to use ECS Fargate (like Salesforce)
+- [x] **CONNECTOR FIX**: Added missing `/.well-known/mcp.json` manifest endpoint
+  - Required for Claude Desktop Custom Connector discovery
+  - Deployed to ECS (commit b3f5fe3)
+  - Verified live at https://quickbooks.gnarlysoft-mcp.com/.well-known/mcp.json
+- [x] **TOKEN AUTO-REFRESH**: Implemented automatic token refresh in authorize endpoint
+  - Changed from "only check sessions with >30 min validity" to "check ANY session and auto-refresh"
+  - Uses existing TokenRefreshService to refresh expired tokens
+  - Only redirects to QB OAuth if refresh fails (e.g., refresh token expired)
+  - Session stays alive indefinitely via auto-refresh (commit f905381)
+- [x] Deployed all fixes to ECS Fargate production
+- [x] Updated documentation to reflect ECS architecture
+**Blockers**: None
+**Decisions**:
+- **Deployment Platform**: Use ECS Fargate (not App Runner) - matches Salesforce architecture
+- **Token Strategy**: Auto-refresh expired tokens instead of forcing re-authentication
+- **Session Model**: ONE company session per realmId, shared by all users (QB best practice)
+- **Connector Type**: Remote MCP Connector (not local MCP server in claude_desktop_config.json)
+**Next**: Test Custom Connector connection in Claude Desktop, verify auto-refresh works
 
 ### Session 3 (2026-01-09)
 **Focus**: Security fix, tool optimization, infrastructure correction & bug investigation
@@ -83,14 +112,14 @@
 > Keep only the last 5 sessions in this file for AI readability.
 
 ## In Progress
-- #2: Testing disabled tools in production (branch: feature/2-disable-data-heavy-tools)
+- Testing Remote MCP Connector with auto-refresh in Claude Desktop
 
 ## Next Session Should
 - [ ] **URGENT**: Rotate QuickBooks production credentials (Client ID and Secret were exposed on GitHub)
+- [ ] Test Custom Connector connection in Claude Desktop (https://quickbooks.gnarlysoft-mcp.com)
+- [ ] Verify automatic token refresh works (check logs for "Successfully refreshed QuickBooks tokens")
+- [ ] Test multi-user session sharing (User A connects, User B should reuse session without QB OAuth)
 - [ ] Test QueryReports tool functionality in Claude Desktop
-- [ ] Reconnect Claude Desktop to generate fresh QuickBooks tokens
-- [ ] Test multi-user session sharing (User A connects, User B should reuse session)
-- [ ] Verify no "authentication required" errors after reconnect
 - [ ] Consider merging feature/2-disable-data-heavy-tools to main
 - [ ] Close issue #2 if testing successful
 - [ ] Update issue #1 with multi-user test results
@@ -98,17 +127,19 @@
 ## Decisions Made
 - **Multi-User Session Strategy**: Mutex + early-exit pattern to prevent duplicate OAuth flows
 - **Token Sharing**: QB tokens shared across users (safe: company-level tokens), MCP tokens isolated per user
-- **Deployment**: Direct to production via AWS App Runner, no staging environment needed
+- **Deployment**: ECS Fargate on `quickbooks-mcp-cluster` (NOT App Runner) - matches Salesforce
 - **Agent Structure**: 5 specialized agents (backend, integration, infra, deployment, reviewer)
 - **Security**: All sensitive files in .gitignore, git history cleaned, credentials must be rotated
 - **Tool Strategy**: Only QueryReports enabled (52 tools disabled) to prevent Claude hanging
-- **Infrastructure**: ECR `quickbooks-mcp-server` is canonical, `qbo-oauth-redirect` deleted
-- **Session Persistence**: Immediate S3 writes (no debounce) for critical data
+- **Infrastructure**: ECR `quickbooks-mcp-server` is canonical, App Runner deleted (obsolete)
+- **Session Persistence**: Immediate S3 saves (no debounce) for critical data
+- **Token Refresh**: Auto-refresh expired tokens in authorize endpoint (session lives indefinitely)
 
 ## Notes
 - Production URL: https://quickbooks.gnarlysoft-mcp.com
 - AWS Account: 700633997241 (launchpad-mcp-devops profile)
+- Deployment: ECS Fargate cluster `quickbooks-mcp-cluster`, service `quickbooks-mcp-service`
 - Session storage: S3 bucket `quickbooks-mcp-sessions`
-- Latest deployment: commit 1e81eb7 (tools disabled) + 15a4282 (ECR docs update)
+- Latest deployment: commit f905381 (auto-refresh + manifest endpoint)
 - ECR Repository: `quickbooks-mcp-server` (AMD64 images)
-- App Runner Service: `qbo-oauth-redirect` (uses `quickbooks-mcp-server` ECR)
+- Architecture: Domain → ALB `quickbooks-mcp-alb` → ECS Fargate
